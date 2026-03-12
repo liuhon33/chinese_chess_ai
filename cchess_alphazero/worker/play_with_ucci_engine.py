@@ -20,7 +20,7 @@ from cchess_alphazero.config import Config
 from cchess_alphazero.environment.env import CChessEnv
 from cchess_alphazero.environment.lookup_tables import ActionLabelsRed, flip_policy, flip_move
 from cchess_alphazero.lib.data_helper import get_game_data_filenames, write_game_data_to_file
-from cchess_alphazero.lib.model_helper import load_best_model_weight, save_as_best_model
+from cchess_alphazero.lib.model_helper import build_fresh_best_model, load_best_model_weight
 from cchess_alphazero.lib.tf_util import set_session_config
 
 logger = getLogger(__name__)
@@ -28,8 +28,7 @@ logger = getLogger(__name__)
 def load_model(config):
     model = CChessModel(config)
     if config.opts.new or not load_best_model_weight(model):
-        model.build()
-        save_as_best_model(model)
+        build_fresh_best_model(model)
     return model
 
 def start(config: Config):
@@ -232,4 +231,7 @@ class SelfPlayWorker:
         if flip:
             policy = flip_policy(policy)
         return list(policy)
+
+
+
 

@@ -1,5 +1,6 @@
 import argparse
 import multiprocessing as mp
+import os
 
 from logging import getLogger
 
@@ -13,6 +14,7 @@ PIECE_STYLE_LIST = ['WOOD', 'POLISH', 'DELICATE']
 BG_STYLE_LIST = ['CANVAS', 'DROPS', 'GREEN', 'QIANHONG', 'SHEET', 'SKELETON', 'WHITE', 'WOOD']
 RANDOM_LIST = ['none', 'small', 'medium', 'large']
 
+
 def create_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("cmd", help="what to do", choices=CMD_LIST)
@@ -22,6 +24,7 @@ def create_parser():
     parser.add_argument("--ai-move-first", help="set human or AI move first", action="store_true")
     parser.add_argument("--cli", help="play with AI with CLI, default with GUI", action="store_true")
     parser.add_argument("--gpu", help="device list", default="0")
+    parser.add_argument("--data-dir", help="store checkpoints and play data under this directory")
     parser.add_argument("--onegreen", help="train sl work with onegreen data", action="store_true")
     parser.add_argument("--skip", help="skip games", default=0, type=int)
     parser.add_argument("--ucci", help="play with ucci engine instead of self play", action="store_true")
@@ -32,11 +35,14 @@ def create_parser():
     parser.add_argument("--elo", help="whether to compute elo score", action="store_true")
     return parser
 
+
 def setup(config: Config, args):
     config.opts.new = args.new
     if args.total_step is not None:
         config.trainer.start_total_steps = args.total_step
     config.opts.device_list = args.gpu
+    if args.data_dir:
+        config.resource.update_paths(data_dir=os.path.abspath(args.data_dir))
     config.resource.create_directories()
     if args.cmd == 'self':
         setup_logger(config.resource.main_log_path)
@@ -49,6 +55,7 @@ def setup(config: Config, args):
     elif args.cmd == 'sl':
         setup_logger(config.resource.sl_log_path)
 
+
 def start():
     parser = create_parser()
     args = parser.parse_args()
@@ -58,11 +65,11 @@ def start():
     setup(config, args)
 
     logger.info('Config type: %s' % (config_type))
+    logger.info(f"Model backend: {config.opts.backend}")
     config.opts.piece_style = args.piece_style
     config.opts.bg_style = args.bg_style
     config.internet.distributed = args.distributed
 
-    # use multiple GPU
     gpus = config.opts.device_list.split(',')
     if len(gpus) > 1:
         config.opts.use_multiple_gpus = True
@@ -108,10 +115,8 @@ def start():
         else:
             from cchess_alphazero.worker import sl
             sl.start(config)
-        
     elif args.cmd == 'ob':
         from cchess_alphazero.play_games import ob_self_play
         pwhc = PlayWithHumanConfig()
         pwhc.update_play_config(config.play)
         ob_self_play.start(config, args.ucci, args.ai_move_first)
-        

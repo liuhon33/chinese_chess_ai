@@ -30,7 +30,7 @@ import cchess_alphazero.environment.static_env as senv
 from cchess_alphazero.agent.model import CChessModel
 from cchess_alphazero.agent.player import CChessPlayer, VisitState
 from cchess_alphazero.environment.lookup_tables import Winner, ActionLabelsRed, flip_move
-from cchess_alphazero.lib.model_helper import load_model_weight
+from cchess_alphazero.lib.model_helper import build_fresh_best_model, load_model_weight
 from cchess_alphazero.lib.tf_util import set_session_config
 
 logger = getLogger(__name__)
@@ -260,20 +260,20 @@ class UCI:
         self.model = CChessModel(self.config)
         weight_path = self.config.resource.model_best_weight_path
         if not config_file:
-            config_path = config.resource.model_best_config_path
+            config_path = self.config.resource.model_best_config_path
             use_history = False
         else:
-            config_path = os.path.join(config.resource.model_dir, config_file)
+            config_path = os.path.join(self.config.resource.model_dir, config_file)
         try:
-            if not load_model_weight(self.model, config_path, weight_path):
-                self.model.build()
+            if self.config.opts.new or not load_model_weight(self.model, config_path, weight_path):
+                build_fresh_best_model(self.model)
                 use_history = True
         except Exception as e:
-            logger.info(f"Exception {e}, 重新加载权重")
-            return self.load_model(config_file='model_128_l1_config.json')
+            logger.info(f"Exception {e}, building a fresh BestModel instead")
+            build_fresh_best_model(self.model)
+            use_history = True
         logger.info(f"use_history = {use_history}")
         return use_history
-
     def search_action(self, depth, infinite):
         no_act = None
         _, _, _, check = senv.done(self.state, need_check=True)
@@ -337,3 +337,5 @@ if __name__ == "__main__":
     pwhc.update_play_config(config.play)
     uci = UCI(config)
     uci.main()
+
+

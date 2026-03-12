@@ -1,6 +1,7 @@
 import os
 import getpass
 
+
 def _project_dir():
     d = os.path.dirname
     return d(d(os.path.abspath(__file__)))
@@ -9,6 +10,7 @@ def _project_dir():
 def _data_dir():
     return os.path.join(_project_dir(), "data")
 
+
 class Config:
     def __init__(self, config_type="mini"):
         self.opts = Options()
@@ -16,9 +18,9 @@ class Config:
         self.internet = InternetConfig()
 
         if config_type == "mini":
-            import configs.mini as c
+            from cchess_alphazero.configs import mini as c
         elif config_type == "normal":
-            import configs.normal as c
+            from cchess_alphazero.configs import normal as c
         elif config_type == 'distribute':
             import cchess_alphazero.configs.distribute as c
         else:
@@ -29,12 +31,28 @@ class Config:
         self.trainer = c.TrainerConfig()
         self.eval = c.EvaluateConfig()
 
+
 class ResourceConfig:
     def __init__(self):
-        self.project_dir = os.environ.get("PROJECT_DIR", _project_dir())
-        self.data_dir = os.environ.get("DATA_DIR", _data_dir())
+        env_project_dir = os.environ.get("PROJECT_DIR", _project_dir())
+        env_data_dir = os.environ.get("DATA_DIR", _data_dir())
+        env_model_dir = os.environ.get("MODEL_DIR")
+        self.update_paths(project_dir=env_project_dir, data_dir=env_data_dir, model_dir=env_model_dir)
 
-        self.model_dir = os.environ.get("MODEL_DIR", os.path.join(self.data_dir, "model"))
+    def update_paths(self, project_dir=None, data_dir=None, model_dir=None):
+        if project_dir is not None:
+            self.project_dir = os.path.abspath(project_dir)
+        elif not hasattr(self, "project_dir"):
+            self.project_dir = _project_dir()
+
+        if data_dir is not None:
+            self.data_dir = os.path.abspath(data_dir)
+        elif not hasattr(self, "data_dir"):
+            self.data_dir = _data_dir()
+
+        if model_dir is None:
+            model_dir = os.path.join(self.data_dir, "model")
+        self.model_dir = os.path.abspath(model_dir)
         self.model_best_config_path = os.path.join(self.model_dir, "model_best_config.json")
         self.model_best_weight_path = os.path.join(self.model_dir, "model_best_weight.h5")
         self.sl_best_config_path = os.path.join(self.model_dir, "sl_best_config.json")
@@ -74,10 +92,12 @@ class ResourceConfig:
             if not os.path.exists(d):
                 os.makedirs(d)
 
+
 class Options:
     new = False
     light = True
     device_list = '0'
+    backend = os.environ.get("CCHESS_BACKEND", "torch")
     bg_style = 'CANVAS'
     piece_style = 'WOOD'
     random = 'none'
@@ -86,6 +106,7 @@ class Options:
     gpu_num = 1
     evaluate = False
     has_history = False
+
 
 class PlayWithHumanConfig:
     def __init__(self):
@@ -104,6 +125,7 @@ class PlayWithHumanConfig:
         pc.search_threads = self.search_threads
         pc.dirichlet_alpha = self.dirichlet_alpha
 
+
 class InternetConfig:
     def __init__(self):
         self.distributed = False
@@ -120,5 +142,3 @@ class InternetConfig:
         # self.download_base_url = 'http://alphazero-1251776088.cossh.myqcloud.com/model/'
         self.get_elo_url = f'{self.base_url}/api/get_elo/'
         self.update_elo_url = f'{self.base_url}/api/add_eval_result/'
-
-

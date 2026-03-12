@@ -20,7 +20,7 @@ from cchess_alphazero.config import Config
 from cchess_alphazero.environment.env import CChessEnv
 from cchess_alphazero.environment.lookup_tables import Winner, flip_move, ActionLabelsRed
 from cchess_alphazero.lib.data_helper import get_game_data_filenames, write_game_data_to_file
-from cchess_alphazero.lib.model_helper import load_model_weight
+from cchess_alphazero.lib.model_helper import build_fresh_best_model, is_next_generation_model_fresh, load_model_weight
 from cchess_alphazero.lib.tf_util import set_session_config
 
 logger = getLogger(__name__)
@@ -28,30 +28,25 @@ logger = getLogger(__name__)
 def start(config: Config):
     set_session_config(per_process_gpu_memory_fraction=1, allow_growth=True, device_list=config.opts.device_list)
     m = Manager()
-    # while True:
-    model_bt = load_model(config, config.resource.model_best_config_path, config.resource.model_best_weight_path)
+    model_bt = load_best_model(config)
+    model_ng = load_next_generation_model(config)
+    if model_ng is None:
+        logger.info("Next generation model is missing or stale; skip evaluation.")
+        return
+
     modelbt_pipes = m.list([model_bt.get_pipes(need_reload=False) for _ in range(config.play.max_processes)])
-    model_ng = load_model(config, config.resource.next_generation_config_path, config.resource.next_generation_weight_path)
-    # while not model_ng:
-    #     logger.info(f"Next generation model is None, wait for 300s")
-    #     sleep(300)
-    #     model_ng = load_model(config, config.resource.next_generation_config_path, config.resource.next_generation_weight_path)
-    logger.info(f"Next generation model has loaded!")
+    logger.info("Next generation model has loaded!")
     modelng_pipes = m.list([model_ng.get_pipes(need_reload=False) for _ in range(config.play.max_processes)])
 
-    # play_worker = EvaluateWorker(config, model1_pipes, model2_pipes)
-    # play_worker.start()
     with ProcessPoolExecutor(max_workers=config.play.max_processes) as executor:
         futures = []
         for i in range(config.play.max_processes):
             eval_worker = EvaluateWorker(config, modelbt_pipes, modelng_pipes, pid=i)
             futures.append(executor.submit(eval_worker.start))
-    
+
     wait(futures)
     model_bt.close_pipes()
     model_ng.close_pipes()
-    # compute whether to update best model
-    # and remove next generation model
     total_score = 0
     red_new_win = 0
     red_new_fail = 0
@@ -261,9 +256,36 @@ def remove_ng_model(config):
     os.remove(rc.next_generation_config_path)
     os.remove(rc.next_generation_weight_path)
 
+def load_best_model(config):
+    model = CChessModel(config)
+    if config.opts.new or not load_model_weight(
+        model,
+        config.resource.model_best_config_path,
+        config.resource.model_best_weight_path,
+        "best model",
+    ):
+        build_fresh_best_model(model)
+    return model
+
+
+def load_next_generation_model(config):
+    if not is_next_generation_model_fresh(config):
+        if config.opts.new:
+            logger.info("Fresh-start mode active; refusing to resume a stale next-generation checkpoint.")
+        return None
+    return load_model(
+        config,
+        config.resource.next_generation_config_path,
+        config.resource.next_generation_weight_path,
+        "next generation model",
+    )
+
+
 def load_model(config, config_path, weight_path, name=None):
     model = CChessModel(config)
     if not load_model_weight(model, config_path, weight_path, name):
         return None
     return model
+
+
 

@@ -13,11 +13,11 @@ from logging import getLogger
 
 logger = getLogger(__name__)
 
-class CChessModelAPI:
 
-    def __init__(self, config: Config, agent_model):  
-        self.agent_model = agent_model  # CChessModel
-        self.pipes = []     # use for communication between processes/threads
+class CChessModelAPI:
+    def __init__(self, config: Config, agent_model):
+        self.agent_model = agent_model
+        self.pipes = []
         self.config = config
         self.need_reload = True
         self.done = False
@@ -35,11 +35,13 @@ class CChessModelAPI:
         return you
 
     def predict_batch_worker(self):
-        if self.config.internet.distributed and self.need_reload:
+        if self.config.opts.new:
+            logger.info("Fresh-start mode active; skip background model reloads.")
+        elif self.config.internet.distributed and self.need_reload:
             self.try_reload_model_from_internet()
         last_model_check_time = time()
         while not self.done:
-            if last_model_check_time + 600 < time() and self.need_reload:
+            if not self.config.opts.new and last_model_check_time + 600 < time() and self.need_reload:
                 self.try_reload_model()
                 last_model_check_time = time()
             ready = connection.wait(self.pipes, timeout=0.001)
@@ -60,8 +62,7 @@ class CChessModelAPI:
             if not data:
                 continue
             data = np.asarray(data, dtype=np.float32)
-            with self.agent_model.graph.as_default():
-                policy_ary, value_ary = self.agent_model.model.predict_on_batch(data)
+            policy_ary, value_ary = self.agent_model.predict_on_batch(data)
             buf = []
             k, i = 0, 0
             for p, v in zip(policy_ary, value_ary):
@@ -74,6 +75,8 @@ class CChessModelAPI:
                     i += 1
 
     def try_reload_model(self, config_file=None):
+        if self.config.opts.new:
+            return
         if config_file:
             config_path = os.path.join(self.config.resource.model_dir, config_file)
             shutil.copy(config_path, self.config.resource.model_best_config_path)
@@ -82,12 +85,13 @@ class CChessModelAPI:
                 self.try_reload_model_from_internet()
             else:
                 if self.need_reload and need_to_reload_best_model_weight(self.agent_model):
-                    with self.agent_model.graph.as_default():
-                        load_best_model_weight(self.agent_model)
+                    load_best_model_weight(self.agent_model)
         except Exception as e:
             logger.error(e)
 
     def try_reload_model_from_internet(self, config_file=None):
+        if self.config.opts.new:
+            return
         response = http_request(self.config.internet.get_latest_digest)
         if response is None:
             logger.error(f"无法连接到远程服务器！请检查网络连接，并重新打开客户端")
@@ -99,11 +103,11 @@ class CChessModelAPI:
             if download_file(self.config.internet.download_url, self.config.resource.model_best_weight_path):
                 logger.info(f"权重下载完毕！开始训练...")
                 try:
-                    with self.agent_model.graph.as_default():
-                        load_best_model_weight(self.agent_model)
+                    load_best_model_weight(self.agent_model)
                 except ValueError as e:
-                    logger.error(f"权重架构不匹配，自动重新加载 {e}")
-                    self.try_reload_model(config_file='model_192x10_config.json')
+                    logger.error(f"权重架构不匹配，停止自动重载: {e}")
+                    if os.path.exists(self.config.resource.model_best_weight_path):
+                        os.remove(self.config.resource.model_best_weight_path)
                 except Exception as e:
                     logger.error(f"加载权重发生错误：{e}，稍后重新下载")
                     os.remove(self.config.resource.model_best_weight_path)
@@ -115,3 +119,4 @@ class CChessModelAPI:
 
     def close(self):
         self.done = True
+

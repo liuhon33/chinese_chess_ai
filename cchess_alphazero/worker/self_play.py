@@ -20,7 +20,7 @@ from cchess_alphazero.config import Config
 from cchess_alphazero.environment.env import CChessEnv
 from cchess_alphazero.environment.lookup_tables import Winner, ActionLabelsRed, flip_policy, flip_move
 from cchess_alphazero.lib.data_helper import get_game_data_filenames, write_game_data_to_file
-from cchess_alphazero.lib.model_helper import load_model_weight, save_as_best_model, load_best_model_weight_from_internet
+from cchess_alphazero.lib.model_helper import build_fresh_best_model, load_model_weight
 from cchess_alphazero.lib.tf_util import set_session_config
 from cchess_alphazero.lib.web_helper import upload_file
 
@@ -36,13 +36,13 @@ def load_model(config, config_file=None):
     else:
         config_path = os.path.join(config.resource.model_dir, config_file)
     try:
-        if not load_model_weight(model, config_path, weight_path):
-            model.build()
-            save_as_best_model(model)
+        if config.opts.new or not load_model_weight(model, config_path, weight_path):
+            build_fresh_best_model(model)
             use_history = True
     except Exception as e:
-        logger.info(f"Exception {e}, 重新加载权重")
-        return load_model(config, config_file='model_192x10_config.json')
+        logger.info(f"Exception {e}, building a fresh BestModel instead")
+        build_fresh_best_model(model)
+        use_history = True
     return model, use_history
 
 def start(config: Config):
@@ -260,4 +260,6 @@ class SelfPlayWorker:
         if flip:
             policy = flip_policy(policy)
         return list(policy)
+
+
 
