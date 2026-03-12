@@ -8,3 +8,4 @@ Icon*
 *.icloud
 
 validation_local_torch_*/mydata/
+mydata/
