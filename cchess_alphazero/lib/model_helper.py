@@ -1,5 +1,14 @@
 import os
+
 from logging import getLogger
+
+from cchess_alphazero.lib.cluster_helper import (
+    cluster_enabled,
+    copy_file_atomically,
+    next_generation_model_ready,
+    publish_model_pair_atomically,
+    remove_file_if_exists,
+)
 
 logger = getLogger(__name__)
 
@@ -85,7 +94,16 @@ def load_model_weight(model, config_path, weight_path, name=None):
 
 
 def save_as_next_generation_model(model):
-    return model.save(model.config.resource.next_generation_config_path, model.config.resource.next_generation_weight_path)
+    rc = model.config.resource
+    if cluster_enabled(model.config):
+        publish_model_pair_atomically(
+            model.save,
+            rc.next_generation_config_path,
+            rc.next_generation_weight_path,
+            ready_path=rc.next_generation_ready_path,
+        )
+        return
+    return model.save(rc.next_generation_config_path, rc.next_generation_weight_path)
 
 
 def load_sl_best_model_weight(model):
@@ -117,12 +135,11 @@ def build_fresh_sl_best_model(model):
 
 
 def next_generation_model_exists(config):
-    rc = config.resource
-    return os.path.exists(rc.next_generation_config_path) and os.path.exists(rc.next_generation_weight_path)
+    return next_generation_model_ready(config)
 
 
 def is_next_generation_model_fresh(config):
-    if not next_generation_model_exists(config):
+    if not next_generation_model_ready(config):
         return False
     if not getattr(config.opts, "new", False):
         return True
@@ -137,3 +154,10 @@ def is_next_generation_model_fresh(config):
         os.path.getmtime(rc.next_generation_weight_path),
     )
     return next_generation_timestamp >= best_timestamp
+
+
+def promote_next_generation_to_best(config):
+    rc = config.resource
+    copy_file_atomically(rc.next_generation_weight_path, rc.model_best_weight_path)
+    copy_file_atomically(rc.next_generation_config_path, rc.model_best_config_path)
+    remove_file_if_exists(rc.next_generation_ready_path)

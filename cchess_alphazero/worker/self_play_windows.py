@@ -20,6 +20,7 @@ from cchess_alphazero.agent.api import CChessModelAPI
 from cchess_alphazero.config import Config
 from cchess_alphazero.environment.env import CChessEnv
 from cchess_alphazero.environment.lookup_tables import Winner, ActionLabelsRed, flip_policy, flip_move
+from cchess_alphazero.lib.cluster_helper import build_cluster_play_data_path, cluster_enabled, safe_write_play_data_enabled, write_json_atomic
 from cchess_alphazero.lib.data_helper import get_game_data_filenames, write_game_data_to_file
 from cchess_alphazero.lib.model_helper import build_fresh_best_model, load_model_weight
 from cchess_alphazero.lib.tf_util import set_session_config
@@ -112,17 +113,25 @@ class SelfPlayWorker:
         return model, use_history
     def flush_buffer(self):
         rc = self.config.resource
-        game_id = datetime.now().strftime("%Y%m%d-%H%M%S.%f")
-        filename = rc.play_data_filename_tmpl % game_id
-        path = os.path.join(rc.play_data_dir, filename)
+        if cluster_enabled(self.config):
+            path = build_cluster_play_data_path(self.config)
+            filename = os.path.basename(path)
+        else:
+            game_id = datetime.now().strftime("%Y%m%d-%H%M%S.%f")
+            filename = rc.play_data_filename_tmpl % game_id
+            path = os.path.join(rc.play_data_dir, filename)
         logger.info("保存博弈数据到 %s" % (path))
-        write_game_data_to_file(path, self.buffer)
+        if safe_write_play_data_enabled(self.config):
+            write_json_atomic(path, self.buffer)
+        else:
+            write_game_data_to_file(path, self.buffer)
         if self.config.internet.distributed:
             upload_worker = Thread(target=self.upload_play_data, args=(path, filename))
             upload_worker.start()
         self.buffer = []
-
     def remove_play_data(self,all=False):
+        if cluster_enabled(self.config):
+            return
         files = get_game_data_filenames(self.config.resource)
         if (all):
             for path in files:
@@ -131,7 +140,6 @@ class SelfPlayWorker:
             while len(files) > self.config.play_data.max_file_num:
                 os.remove(files[0])
                 del files[0]
-
     def upload_play_data(self, path, filename):
         digest = CChessModel.fetch_digest(self.config.resource.model_best_weight_path)
         data = {'digest': digest, 'username': self.config.internet.username, 'version': '2.4'}
@@ -265,5 +273,7 @@ def build_policy(action, flip):
     if flip:
         policy = flip_policy(policy)
     return list(policy)
+
+
 
 

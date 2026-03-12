@@ -33,6 +33,14 @@ def create_parser():
     parser.add_argument("--random", help="choose a style of randomness", choices=RANDOM_LIST, default="none")
     parser.add_argument("--distributed", help="whether upload/download file from remote server", action="store_true")
     parser.add_argument("--elo", help="whether to compute elo score", action="store_true")
+    parser.add_argument("--cluster-mode", help="enable shared-filesystem cluster coordination", action="store_true")
+    parser.add_argument("--worker-id", help="stable self-play or optimizer worker identifier")
+    parser.add_argument("--auto-reload-best", help="explicitly enable periodic best-model reloads", action="store_true", default=None)
+    parser.add_argument("--reload-best-interval", help="seconds between best-model reload checks", type=float)
+    parser.add_argument("--safe-write-play-data", help="write self-play data through a temp file and atomic rename", action="store_true")
+    parser.add_argument("--archive-consumed-data", help="archive claimed play-data files after optimization", action="store_true")
+    parser.add_argument("--optimizer-poll-interval", help="seconds between optimizer directory polls", type=float)
+    parser.add_argument("--evaluator-poll-interval", help="seconds between evaluator directory polls", type=float)
     return parser
 
 
@@ -43,6 +51,14 @@ def setup(config: Config, args):
     config.opts.device_list = args.gpu
     if args.data_dir:
         config.resource.update_paths(data_dir=os.path.abspath(args.data_dir))
+    config.cluster.enabled = args.cluster_mode
+    config.cluster.worker_id = args.worker_id
+    config.cluster.auto_reload_best = args.auto_reload_best
+    config.cluster.reload_best_interval = args.reload_best_interval
+    config.cluster.safe_write_play_data = args.safe_write_play_data
+    config.cluster.archive_consumed_data = args.archive_consumed_data
+    config.cluster.optimizer_poll_interval = args.optimizer_poll_interval
+    config.cluster.evaluator_poll_interval = args.evaluator_poll_interval
     config.resource.create_directories()
     if args.cmd == 'self':
         setup_logger(config.resource.main_log_path)
@@ -56,6 +72,7 @@ def setup(config: Config, args):
         setup_logger(config.resource.sl_log_path)
 
 
+
 def start():
     parser = create_parser()
     args = parser.parse_args()
@@ -66,6 +83,14 @@ def start():
 
     logger.info('Config type: %s' % (config_type))
     logger.info(f"Model backend: {config.opts.backend}")
+    if config.cluster.enabled:
+        logger.info(
+            "Cluster mode enabled: worker_id=%s safe_write=%s archive_consumed=%s reload_interval=%s",
+            config.cluster.worker_id,
+            config.cluster.safe_write_play_data,
+            config.cluster.archive_consumed_data,
+            config.cluster.reload_best_interval,
+        )
     config.opts.piece_style = args.piece_style
     config.opts.bg_style = args.bg_style
     config.internet.distributed = args.distributed

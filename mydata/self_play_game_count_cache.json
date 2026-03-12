@@ -1,0 +1,365 @@
+{
+  "files": {
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-164222.642368.json": {
+      "games": 5,
+      "mtime_ns": 1773348142644423900,
+      "size": 13014
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-164711.352478.json": {
+      "games": 5,
+      "mtime_ns": 1773348431353984200,
+      "size": 10154
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-165137.342458.json": {
+      "games": 5,
+      "mtime_ns": 1773348697344519200,
+      "size": 10518
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-165320.589166.json": {
+      "games": 5,
+      "mtime_ns": 1773348800590676500,
+      "size": 7387
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-165851.699777.json": {
+      "games": 5,
+      "mtime_ns": 1773349131702287000,
+      "size": 14044
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-170513.832860.json": {
+      "games": 5,
+      "mtime_ns": 1773349513835368900,
+      "size": 13906
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-171029.911875.json": {
+      "games": 5,
+      "mtime_ns": 1773349829914448300,
+      "size": 14539
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-171402.328237.json": {
+      "games": 5,
+      "mtime_ns": 1773350042329778200,
+      "size": 9762
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-171833.530686.json": {
+      "games": 5,
+      "mtime_ns": 1773350313532230500,
+      "size": 9657
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-172116.216946.json": {
+      "games": 5,
+      "mtime_ns": 1773350476218452200,
+      "size": 9896
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-172819.923588.json": {
+      "games": 5,
+      "mtime_ns": 1773350899926164400,
+      "size": 15889
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-173437.781616.json": {
+      "games": 5,
+      "mtime_ns": 1773351277784183400,
+      "size": 15146
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-174136.803594.json": {
+      "games": 5,
+      "mtime_ns": 1773351696806604600,
+      "size": 16198
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-174956.396005.json": {
+      "games": 5,
+      "mtime_ns": 1773352196400076800,
+      "size": 15875
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-175552.889951.json": {
+      "games": 5,
+      "mtime_ns": 1773352552892461100,
+      "size": 13892
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-175907.844574.json": {
+      "games": 5,
+      "mtime_ns": 1773352747846080500,
+      "size": 8157
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-180534.000370.json": {
+      "games": 5,
+      "mtime_ns": 1773353134002387700,
+      "size": 12586
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-180922.137312.json": {
+      "games": 5,
+      "mtime_ns": 1773353362138819000,
+      "size": 9938
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-181134.809042.json": {
+      "games": 5,
+      "mtime_ns": 1773353494809546500,
+      "size": 5147
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-181656.397001.json": {
+      "games": 5,
+      "mtime_ns": 1773353816399515200,
+      "size": 14701
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-182337.615552.json": {
+      "games": 5,
+      "mtime_ns": 1773354217618563800,
+      "size": 18387
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\play_data\\play_20260312-182816.771101.json": {
+      "games": 5,
+      "mtime_ns": 1773354496773170500,
+      "size": 10046
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-123950.868314.json": {
+      "games": 1,
+      "mtime_ns": 1773333590868314400,
+      "size": 225
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124035.531666.json": {
+      "games": 1,
+      "mtime_ns": 1773333635531666300,
+      "size": 657
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124242.971714.json": {
+      "games": 1,
+      "mtime_ns": 1773333762973221500,
+      "size": 2663
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124314.391107.json": {
+      "games": 1,
+      "mtime_ns": 1773333794391621200,
+      "size": 859
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124317.076591.json": {
+      "games": 1,
+      "mtime_ns": 1773333797076591300,
+      "size": 130
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124325.728502.json": {
+      "games": 1,
+      "mtime_ns": 1773333805729527500,
+      "size": 265
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124451.607862.json": {
+      "games": 1,
+      "mtime_ns": 1773333891608868500,
+      "size": 2398
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124624.415933.json": {
+      "games": 1,
+      "mtime_ns": 1773333984416939600,
+      "size": 2663
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124809.853170.json": {
+      "games": 1,
+      "mtime_ns": 1773334089854174400,
+      "size": 2663
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-124813.737874.json": {
+      "games": 1,
+      "mtime_ns": 1773334093737874600,
+      "size": 157
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-130507.226356.json": {
+      "games": 1,
+      "mtime_ns": 1773335107227360100,
+      "size": 2290
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-130822.790880.json": {
+      "games": 1,
+      "mtime_ns": 1773335302790880300,
+      "size": 2663
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-131341.922408.json": {
+      "games": 1,
+      "mtime_ns": 1773335621922408400,
+      "size": 2663
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-131744.814704.json": {
+      "games": 1,
+      "mtime_ns": 1773335864815710500,
+      "size": 2128
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-131909.258350.json": {
+      "games": 1,
+      "mtime_ns": 1773335949258854000,
+      "size": 1035
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-132235.513073.json": {
+      "games": 1,
+      "mtime_ns": 1773336155513577600,
+      "size": 2663
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-134034.294452.json": {
+      "games": 1,
+      "mtime_ns": 1773337234294968100,
+      "size": 346
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-134130.659554.json": {
+      "games": 1,
+      "mtime_ns": 1773337290660589300,
+      "size": 2628
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-134133.831391.json": {
+      "games": 1,
+      "mtime_ns": 1773337293831912800,
+      "size": 198
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-135806.124981.json": {
+      "games": 1,
+      "mtime_ns": 1773338286125484200,
+      "size": 2663
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-140821.414612.json": {
+      "games": 5,
+      "mtime_ns": 1773338901418193300,
+      "size": 15417
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-141219.201884.json": {
+      "games": 5,
+      "mtime_ns": 1773339139203435100,
+      "size": 7482
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-141617.186694.json": {
+      "games": 5,
+      "mtime_ns": 1773339377188200700,
+      "size": 9534
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-142049.111895.json": {
+      "games": 5,
+      "mtime_ns": 1773339649114404500,
+      "size": 13473
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-142605.950289.json": {
+      "games": 5,
+      "mtime_ns": 1773339965952351700,
+      "size": 11391
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-143154.408076.json": {
+      "games": 5,
+      "mtime_ns": 1773340314411086200,
+      "size": 14083
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-143624.656700.json": {
+      "games": 5,
+      "mtime_ns": 1773340584658708700,
+      "size": 12409
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-144141.784853.json": {
+      "games": 5,
+      "mtime_ns": 1773340901787870200,
+      "size": 14066
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-145132.835870.json": {
+      "games": 5,
+      "mtime_ns": 1773341492837376600,
+      "size": 14351
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-145652.357465.json": {
+      "games": 5,
+      "mtime_ns": 1773341812360476600,
+      "size": 12315
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-150333.807414.json": {
+      "games": 5,
+      "mtime_ns": 1773342213808923900,
+      "size": 11247
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-150933.735940.json": {
+      "games": 5,
+      "mtime_ns": 1773342573737948300,
+      "size": 15741
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-151307.506599.json": {
+      "games": 5,
+      "mtime_ns": 1773342787509109300,
+      "size": 9371
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-151736.416133.json": {
+      "games": 5,
+      "mtime_ns": 1773343056417684700,
+      "size": 10829
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-152248.006822.json": {
+      "games": 5,
+      "mtime_ns": 1773343368008832700,
+      "size": 14054
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-152715.666162.json": {
+      "games": 5,
+      "mtime_ns": 1773343635668171800,
+      "size": 10382
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-153107.484757.json": {
+      "games": 5,
+      "mtime_ns": 1773343867486306600,
+      "size": 11071
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-153643.445242.json": {
+      "games": 5,
+      "mtime_ns": 1773344203447750900,
+      "size": 12125
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-154136.203901.json": {
+      "games": 5,
+      "mtime_ns": 1773344496206492000,
+      "size": 12542
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-154657.258269.json": {
+      "games": 5,
+      "mtime_ns": 1773344817260328600,
+      "size": 10869
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-155318.259991.json": {
+      "games": 5,
+      "mtime_ns": 1773345198263551700,
+      "size": 16714
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-155907.952885.json": {
+      "games": 5,
+      "mtime_ns": 1773345547955943500,
+      "size": 13097
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-160420.163752.json": {
+      "games": 5,
+      "mtime_ns": 1773345860165823900,
+      "size": 13285
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-160849.912829.json": {
+      "games": 5,
+      "mtime_ns": 1773346129915339500,
+      "size": 9358
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-161337.095182.json": {
+      "games": 5,
+      "mtime_ns": 1773346417097694400,
+      "size": 11382
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-161910.967748.json": {
+      "games": 5,
+      "mtime_ns": 1773346750969254300,
+      "size": 10801
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-162253.637241.json": {
+      "games": 5,
+      "mtime_ns": 1773346973639299800,
+      "size": 11532
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-162755.118260.json": {
+      "games": 5,
+      "mtime_ns": 1773347275119766300,
+      "size": 13461
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-163117.090604.json": {
+      "games": 5,
+      "mtime_ns": 1773347477092613800,
+      "size": 8751
+    },
+    "E:\\cc\\ChineseChess-AlphaZero\\mydata\\trained\\play_20260312-163748.302588.json": {
+      "games": 5,
+      "mtime_ns": 1773347868305112100,
+      "size": 13621
+    }
+  },
+  "updated_at": "2026-03-12T22:35:13Z"
+}

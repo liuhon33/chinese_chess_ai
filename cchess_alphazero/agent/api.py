@@ -1,15 +1,17 @@
-from multiprocessing import connection, Pipe
+from multiprocessing import Pipe, connection
 from threading import Thread
+from time import time
 
 import os
 import numpy as np
 import shutil
 
-from cchess_alphazero.config import Config
-from cchess_alphazero.lib.model_helper import load_best_model_weight, need_to_reload_best_model_weight
-from cchess_alphazero.lib.web_helper import http_request, download_file
-from time import time
 from logging import getLogger
+
+from cchess_alphazero.config import Config
+from cchess_alphazero.lib.cluster_helper import auto_reload_best_enabled, best_model_reload_interval
+from cchess_alphazero.lib.model_helper import load_best_model_weight, need_to_reload_best_model_weight
+from cchess_alphazero.lib.web_helper import download_file, http_request
 
 logger = getLogger(__name__)
 
@@ -35,13 +37,15 @@ class CChessModelAPI:
         return you
 
     def predict_batch_worker(self):
+        reload_enabled = self.need_reload and auto_reload_best_enabled(self.config)
+        reload_interval = best_model_reload_interval(self.config)
         if self.config.opts.new:
             logger.info("Fresh-start mode active; skip background model reloads.")
-        elif self.config.internet.distributed and self.need_reload:
+        elif self.config.internet.distributed and reload_enabled:
             self.try_reload_model_from_internet()
         last_model_check_time = time()
         while not self.done:
-            if not self.config.opts.new and last_model_check_time + 600 < time() and self.need_reload:
+            if not self.config.opts.new and reload_enabled and last_model_check_time + reload_interval < time():
                 self.try_reload_model()
                 last_model_check_time = time()
             ready = connection.wait(self.pipes, timeout=0.001)
@@ -84,7 +88,7 @@ class CChessModelAPI:
             if self.config.internet.distributed and not config_file:
                 self.try_reload_model_from_internet()
             else:
-                if self.need_reload and need_to_reload_best_model_weight(self.agent_model):
+                if self.need_reload and auto_reload_best_enabled(self.config) and need_to_reload_best_model_weight(self.agent_model):
                     load_best_model_weight(self.agent_model)
         except Exception as e:
             logger.error(e)
@@ -119,4 +123,3 @@ class CChessModelAPI:
 
     def close(self):
         self.done = True
-

@@ -1,5 +1,4 @@
 import os
-import shutil
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, wait
 from logging import getLogger
@@ -11,7 +10,13 @@ import cchess_alphazero.environment.static_env as senv
 from cchess_alphazero.agent.model import CChessModel
 from cchess_alphazero.agent.player import CChessPlayer, VisitState
 from cchess_alphazero.config import Config
-from cchess_alphazero.lib.model_helper import build_fresh_best_model, is_next_generation_model_fresh, load_model_weight
+from cchess_alphazero.lib.cluster_helper import evaluator_poll_interval, remove_file_if_exists
+from cchess_alphazero.lib.model_helper import (
+    build_fresh_best_model,
+    is_next_generation_model_fresh,
+    load_model_weight,
+    promote_next_generation_to_best,
+)
 from cchess_alphazero.lib.tf_util import set_session_config
 from cchess_alphazero.lib.training_monitor import estimate_match_elo, record_eval_metrics
 
@@ -29,7 +34,7 @@ class ContinuousEvaluator:
 
     @property
     def polling_interval(self):
-        return max(1.0, float(getattr(self.config.eval, "polling_interval", 300)))
+        return evaluator_poll_interval(self.config)
 
     def start(self):
         waiting_for_candidate = False
@@ -343,17 +348,15 @@ class EvaluateWorker:
 
 
 def replace_best_model(config):
-    rc = config.resource
-    shutil.copyfile(rc.next_generation_config_path, rc.model_best_config_path)
-    shutil.copyfile(rc.next_generation_weight_path, rc.model_best_weight_path)
+    promote_next_generation_to_best(config)
     remove_ng_model(config)
 
 
 def remove_ng_model(config):
     rc = config.resource
-    for path in (rc.next_generation_config_path, rc.next_generation_weight_path):
-        if os.path.exists(path):
-            os.remove(path)
+    for path in (rc.next_generation_config_path, rc.next_generation_weight_path, rc.next_generation_ready_path):
+        remove_file_if_exists(path)
+
 
 
 def load_best_model(config):

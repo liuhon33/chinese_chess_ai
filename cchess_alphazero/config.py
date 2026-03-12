@@ -14,6 +14,7 @@ def _data_dir():
 class Config:
     def __init__(self, config_type="mini"):
         self.opts = Options()
+        self.cluster = ClusterConfig()
         self.resource = ResourceConfig()
         self.internet = InternetConfig()
 
@@ -64,14 +65,17 @@ class ResourceConfig:
         self.next_generation_model_dir = os.path.join(self.model_dir, "next_generation")
         self.next_generation_config_path = os.path.join(self.next_generation_model_dir, "next_generation_config.json")
         self.next_generation_weight_path = os.path.join(self.next_generation_model_dir, "next_generation_weight.h5")
+        self.next_generation_ready_path = os.path.join(self.next_generation_model_dir, "next_generation_ready.json")
         self.rival_model_config_path = os.path.join(self.model_dir, "rival_config.json")
         self.rival_model_weight_path = os.path.join(self.model_dir, "rival_weight.h5")
 
         self.play_data_dir = os.path.join(self.data_dir, "play_data")
+        self.play_data_inflight_dir = os.path.join(self.play_data_dir, "inflight")
         self.play_data_filename_tmpl = "play_%s.json"
         self.self_play_game_idx_file = os.path.join(self.data_dir, "play_data_idx")
         self.play_record_filename_tmpl = "record_%s.qp"
         self.play_record_dir = os.path.join(self.data_dir, "play_record")
+        self.trained_data_dir = os.path.join(self.data_dir, "trained")
 
         self.log_dir = os.path.join(self.project_dir, "logs")
         self.main_log_path = os.path.join(self.log_dir, "main.log")
@@ -92,8 +96,18 @@ class ResourceConfig:
         self.font_path = os.path.join(self.project_dir, 'cchess_alphazero', 'play_games', 'PingFang.ttc')
 
     def create_directories(self):
-        dirs = [self.project_dir, self.data_dir, self.model_dir, self.play_data_dir, self.log_dir,
-                self.play_record_dir, self.next_generation_model_dir, self.sl_data_dir]
+        dirs = [
+            self.project_dir,
+            self.data_dir,
+            self.model_dir,
+            self.play_data_dir,
+            self.play_data_inflight_dir,
+            self.log_dir,
+            self.play_record_dir,
+            self.next_generation_model_dir,
+            self.sl_data_dir,
+            self.trained_data_dir,
+        ]
         for d in dirs:
             if not os.path.exists(d):
                 os.makedirs(d)
@@ -112,6 +126,18 @@ class Options:
     gpu_num = 1
     evaluate = False
     has_history = False
+
+
+class ClusterConfig:
+    def __init__(self):
+        self.enabled = False
+        self.worker_id = None
+        self.auto_reload_best = None
+        self.reload_best_interval = None
+        self.safe_write_play_data = False
+        self.archive_consumed_data = False
+        self.optimizer_poll_interval = None
+        self.evaluator_poll_interval = None
 
 
 class PlayWithHumanConfig:

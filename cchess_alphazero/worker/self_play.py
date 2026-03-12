@@ -19,6 +19,7 @@ from cchess_alphazero.agent.api import CChessModelAPI
 from cchess_alphazero.config import Config
 from cchess_alphazero.environment.env import CChessEnv
 from cchess_alphazero.environment.lookup_tables import Winner, ActionLabelsRed, flip_policy, flip_move
+from cchess_alphazero.lib.cluster_helper import build_cluster_play_data_path, cluster_enabled, safe_write_play_data_enabled, write_json_atomic
 from cchess_alphazero.lib.data_helper import get_game_data_filenames, write_game_data_to_file
 from cchess_alphazero.lib.model_helper import build_fresh_best_model, load_model_weight
 from cchess_alphazero.lib.tf_util import set_session_config
@@ -260,6 +261,3 @@ class SelfPlayWorker:
         if flip:
             policy = flip_policy(policy)
         return list(policy)
-
-
-

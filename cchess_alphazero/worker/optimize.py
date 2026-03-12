@@ -13,6 +13,14 @@ import cchess_alphazero.environment.static_env as senv
 from cchess_alphazero.agent.model import CChessModel
 from cchess_alphazero.config import Config
 from cchess_alphazero.environment.lookup_tables import ActionLabelsRed, flip_policy
+from cchess_alphazero.lib.cluster_helper import (
+    claim_play_data_file,
+    cluster_enabled,
+    finalize_claimed_play_data,
+    is_file_stable,
+    optimizer_poll_interval,
+    restore_claimed_play_data,
+)
 from cchess_alphazero.lib.data_helper import get_game_data_filenames, read_game_data_from_file
 from cchess_alphazero.lib.model_helper import (
     build_fresh_best_model,
@@ -43,7 +51,7 @@ class OptimizeWorker:
 
     @property
     def polling_interval(self):
-        return max(1.0, float(getattr(self.config.trainer, "polling_interval", 300)))
+        return optimizer_poll_interval(self.config)
 
     def start(self):
         self.model = self.load_model()
@@ -72,7 +80,7 @@ class OptimizeWorker:
                 continue
             waiting_for_candidate = False
 
-            files = get_game_data_filenames(self.config.resource)
+            files = self.available_play_data_files()
             if not self.has_enough_new_data(files, last_file):
                 if not waiting_for_data:
                     last_file_label = os.path.basename(last_file) if last_file else "the start of training"
@@ -95,10 +103,23 @@ class OptimizeWorker:
                 sleep(self.polling_interval)
                 continue
 
-            last_file = files[-1]
-            logger.info("Last file = %s", last_file)
-            logger.debug("Start training %s files", len(files))
-            self.filenames = deque(files)
+            claimed_files = self.claim_selected_files(files)
+            if self.cluster_mode and not claimed_files:
+                logger.info("No stable play-data files could be claimed safely; polling again in %.1f seconds.", self.polling_interval)
+                sleep(self.polling_interval)
+                continue
+
+            files_to_train = [item["claimed_path"] for item in claimed_files] if self.cluster_mode else files
+            if not files_to_train:
+                logger.info("No play-data files remain after claiming; polling again in %.1f seconds.", self.polling_interval)
+                sleep(self.polling_interval)
+                continue
+
+            if not self.cluster_mode:
+                last_file = files_to_train[-1]
+            logger.info("Last file = %s", files_to_train[-1])
+            logger.debug("Start training %s files", len(files_to_train))
+            self.filenames = deque(files_to_train)
             shuffle(self.filenames)
             self.fill_queue()
             self.update_learning_rate(total_steps)
@@ -112,32 +133,76 @@ class OptimizeWorker:
                 self.count += 1
                 logger.info(
                     "Optimize cycle complete: trained %s file(s), %s sample(s), %s optimizer step(s), total_steps=%s, candidate=%s",
-                    len(files),
+                    len(files_to_train),
                     sample_count,
                     steps,
                     total_steps,
                     candidate_path,
                 )
                 self.clear_dataset()
-                self.backup_play_data(files)
+                if self.cluster_mode:
+                    self.finalize_claimed_files(claimed_files)
+                else:
+                    self.backup_play_data(files_to_train)
             else:
                 logger.warning(
                     "Collected %s sample(s) from %s file(s), below batch size %s; keeping the data in memory for the next pass.",
                     len(self.dataset[0]),
-                    len(files),
+                    len(files_to_train),
                     self.config.trainer.batch_size,
                 )
+                if self.cluster_mode:
+                    self.restore_claimed_files(claimed_files)
+
+    @property
+    def cluster_mode(self):
+        return cluster_enabled(self.config)
+
+    def available_play_data_files(self):
+        files = get_game_data_filenames(self.config.resource)
+        if not self.cluster_mode:
+            return files
+        return [path for path in files if is_file_stable(path)]
+
+    def claim_selected_files(self, files):
+        if not self.cluster_mode:
+            return []
+        claimed = []
+        for source_path in files:
+            claimed_path = claim_play_data_file(self.config, source_path)
+            if claimed_path is None:
+                continue
+            claimed.append(
+                {
+                    "source_path": source_path,
+                    "original_name": os.path.basename(source_path),
+                    "claimed_path": claimed_path,
+                }
+            )
+        return claimed
+
+    def finalize_claimed_files(self, claimed_files):
+        for item in claimed_files:
+            finalize_claimed_play_data(self.config, item["claimed_path"], item["original_name"])
+
+    def restore_claimed_files(self, claimed_files):
+        for item in claimed_files:
+            restore_claimed_play_data(self.config, item["claimed_path"], item["original_name"])
 
     def has_enough_new_data(self, files, last_file):
         required = self.config.trainer.min_games_to_begin_learn
         if len(files) < required:
             return False
+        if self.cluster_mode:
+            return True
         if last_file is None or last_file not in files:
             return True
         next_idx = files.index(last_file) + 1
         return len(files) - next_idx >= required
 
     def select_files_to_train(self, files, last_file):
+        if self.cluster_mode:
+            return files[:self.config.trainer.load_step]
         if last_file is not None and last_file in files:
             start_idx = files.index(last_file) + 1
             return files[start_idx:start_idx + self.config.trainer.load_step]
@@ -244,7 +309,7 @@ class OptimizeWorker:
         return False
 
     def backup_play_data(self, files):
-        backup_folder = os.path.join(self.config.resource.data_dir, "trained")
+        backup_folder = self.config.resource.trained_data_dir
         cnt = 0
         if not os.path.exists(backup_folder):
             os.makedirs(backup_folder)
@@ -261,7 +326,8 @@ def load_data_from_file(filename, use_history=False):
         data = read_game_data_from_file(filename)
     except Exception as e:
         logger.error(f"Error when loading data {e}")
-        os.remove(filename)
+        if os.path.exists(filename):
+            os.remove(filename)
         return None
     if data is None:
         return None
@@ -367,3 +433,5 @@ def build_policy(action, flip):
     if flip:
         policy = flip_policy(policy)
     return list(policy)
+
+

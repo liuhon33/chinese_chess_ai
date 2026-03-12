@@ -74,7 +74,7 @@ class TrainerConfig:
         ]
         self.sl_game_step = 2000
         self.load_step = 16
-        self.polling_interval = 90
+        self.polling_interval = 300
 
 
 class ModelConfig:
