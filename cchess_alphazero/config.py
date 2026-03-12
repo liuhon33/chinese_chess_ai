@@ -79,11 +79,15 @@ class ResourceConfig:
         self.play_log_path = os.path.join(self.log_dir, "play.log")
         self.sl_log_path = os.path.join(self.log_dir, "sl.log")
         self.eval_log_path = os.path.join(self.log_dir, "eval.log")
+        self.elo_history_path = os.path.join(self.log_dir, "elo_history.csv")
+        self.elo_plot_path = os.path.join(self.log_dir, "elo_vs_games.png")
 
         self.sl_data_dir = os.path.join(self.data_dir, "sl_data")
         self.sl_data_gameinfo = os.path.join(self.sl_data_dir, "gameinfo.csv")
         self.sl_data_move = os.path.join(self.sl_data_dir, "moves.csv")
         self.sl_onegreen = os.path.join(self.sl_data_dir, "onegreen.json")
+        self.training_state_path = os.path.join(self.data_dir, "training_state.json")
+        self.self_play_game_cache_path = os.path.join(self.data_dir, "self_play_game_count_cache.json")
 
         self.font_path = os.path.join(self.project_dir, 'cchess_alphazero', 'play_games', 'PingFang.ttc')
 

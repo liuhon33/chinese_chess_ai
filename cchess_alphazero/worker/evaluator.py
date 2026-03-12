@@ -13,6 +13,7 @@ from cchess_alphazero.agent.player import CChessPlayer, VisitState
 from cchess_alphazero.config import Config
 from cchess_alphazero.lib.model_helper import build_fresh_best_model, is_next_generation_model_fresh, load_model_weight
 from cchess_alphazero.lib.tf_util import set_session_config
+from cchess_alphazero.lib.training_monitor import estimate_match_elo, record_eval_metrics
 
 logger = getLogger(__name__)
 
@@ -58,18 +59,34 @@ class ContinuousEvaluator:
                 continue
 
             if result["score_ratio"] >= threshold:
+                promotion_decision = "promote_candidate"
                 logger.info(
                     "Promotion decision: promote candidate (%.2f%% >= %.2f%% threshold).",
                     result["win_rate"],
                     threshold * 100,
                 )
-                replace_best_model(self.config)
             else:
+                promotion_decision = "keep_best"
                 logger.info(
                     "Promotion decision: keep current best (%.2f%% < %.2f%% threshold).",
                     result["win_rate"],
                     threshold * 100,
                 )
+
+            try:
+                row = record_eval_metrics(self.config, result, promotion_decision)
+                logger.info(
+                    "Recorded local Elo history at %s (games=%s, elo=%s).",
+                    self.config.resource.elo_history_path,
+                    row["total_self_play_games"],
+                    row["elo"],
+                )
+            except Exception:
+                logger.exception("Failed to record local Elo metrics after evaluation.")
+
+            if promotion_decision == "promote_candidate":
+                replace_best_model(self.config)
+            else:
                 remove_ng_model(self.config)
 
 
@@ -109,6 +126,9 @@ def evaluate_next_generation_model(config: Config):
             black_new_draw += data[5]
             black_new_fail += data[6]
 
+        wins = red_new_win + black_new_win
+        losses = red_new_fail + black_new_fail
+        draws = red_new_draw + black_new_draw
         game_num = config.eval.game_num * config.play.max_processes
         win_rate = total_score * 100 / game_num
         logger.info("Evaluate over, next generation win %s/%s = %.2f%%", total_score, game_num, win_rate)
@@ -120,6 +140,10 @@ def evaluate_next_generation_model(config: Config):
             "game_num": game_num,
             "score_ratio": total_score / game_num,
             "win_rate": win_rate,
+            "wins": wins,
+            "losses": losses,
+            "draws": draws,
+            "elo": estimate_match_elo(wins, losses, draws),
         }
     finally:
         model_bt.close_pipes()

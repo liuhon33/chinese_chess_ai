@@ -2,6 +2,9 @@ import unittest
 from collections import deque
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+
+import cchess_alphazero.environment.static_env as senv
 from cchess_alphazero.config import Config
 from cchess_alphazero.worker import evaluator, optimize
 
@@ -22,7 +25,7 @@ class LocalTorchConfigTest(unittest.TestCase):
         self.assertEqual(config.trainer.min_games_to_begin_learn, 8)
         self.assertEqual(config.trainer.batch_size, 256)
         self.assertEqual(config.trainer.load_step, 16)
-        self.assertEqual(config.trainer.polling_interval, 15)
+        self.assertEqual(config.trainer.polling_interval, 90)
         self.assertEqual(config.eval.polling_interval, 15)
         self.assertEqual(config.eval.next_generation_replace_rate, 0.55)
 
@@ -48,6 +51,7 @@ class OptimizeWorkerLoopTest(unittest.TestCase):
              patch.object(worker, "fill_queue", side_effect=fill_queue), \
              patch.object(worker, "train_epoch", return_value=32) as train_epoch, \
              patch.object(worker, "publish_candidate_model") as publish_candidate_model, \
+             patch("cchess_alphazero.worker.optimize.save_training_state") as save_training_state, \
              patch.object(worker, "backup_play_data") as backup_play_data, \
              patch("cchess_alphazero.worker.optimize.sleep", side_effect=_StopLoop):
             with self.assertRaises(_StopLoop):
@@ -55,17 +59,42 @@ class OptimizeWorkerLoopTest(unittest.TestCase):
 
         train_epoch.assert_called_once_with(config.trainer.epoch_to_checkpoint)
         publish_candidate_model.assert_called_once()
+        save_training_state.assert_called_once_with(config, 32)
         backup_play_data.assert_called_once()
+
+
+class OptimizeDataExpansionTest(unittest.TestCase):
+    def test_expanding_data_handles_multiple_games_per_file(self):
+        data = [
+            senv.INIT_STATE,
+            ["7273", 1],
+            senv.INIT_STATE,
+            ["8081", -1],
+        ]
+
+        state_ary, policy_ary, value_ary = optimize.expanding_data(data, use_history=False)
+
+        self.assertEqual(state_ary.shape[0], 2)
+        self.assertEqual(policy_ary.shape[0], 2)
+        np.testing.assert_array_equal(value_ary, np.asarray([1, -1], dtype=np.float32))
 
 
 class EvaluatorLoopTest(unittest.TestCase):
     def test_evaluator_waits_then_promotes_candidate(self):
         config = Config("local_torch")
         service = evaluator.ContinuousEvaluator(config)
-        result = {"score_ratio": 0.75, "win_rate": 75.0}
+        result = {
+            "score_ratio": 0.75,
+            "win_rate": 75.0,
+            "wins": 6,
+            "losses": 2,
+            "draws": 0,
+            "elo": 190.85,
+        }
 
         with patch("cchess_alphazero.worker.evaluator.is_next_generation_model_fresh", side_effect=[False, True, False]), \
              patch("cchess_alphazero.worker.evaluator.evaluate_next_generation_model", return_value=result) as evaluate_once, \
+             patch("cchess_alphazero.worker.evaluator.record_eval_metrics", return_value={"total_self_play_games": 40, "elo": "190.85"}) as record_eval_metrics, \
              patch("cchess_alphazero.worker.evaluator.replace_best_model") as replace_best_model, \
              patch("cchess_alphazero.worker.evaluator.remove_ng_model") as remove_ng_model, \
              patch("cchess_alphazero.worker.evaluator.sleep", side_effect=[None, _StopLoop]):
@@ -73,6 +102,7 @@ class EvaluatorLoopTest(unittest.TestCase):
                 service.start()
 
         evaluate_once.assert_called_once_with(config)
+        record_eval_metrics.assert_called_once_with(config, result, "promote_candidate")
         replace_best_model.assert_called_once_with(config)
         remove_ng_model.assert_not_called()
 

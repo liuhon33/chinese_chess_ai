@@ -23,6 +23,7 @@ from cchess_alphazero.lib.model_helper import (
     save_as_next_generation_model,
 )
 from cchess_alphazero.lib.tf_util import set_session_config
+from cchess_alphazero.lib.training_monitor import save_training_state
 
 logger = getLogger(__name__)
 
@@ -101,12 +102,22 @@ class OptimizeWorker:
             shuffle(self.filenames)
             self.fill_queue()
             self.update_learning_rate(total_steps)
-            if len(self.dataset[0]) >= self.config.trainer.batch_size:
+            sample_count = len(self.dataset[0])
+            if sample_count >= self.config.trainer.batch_size:
                 steps = self.train_epoch(self.config.trainer.epoch_to_checkpoint)
                 total_steps += steps
-                self.publish_candidate_model()
+                candidate_path = self.publish_candidate_model()
+                save_training_state(self.config, total_steps)
                 self.update_learning_rate(total_steps)
                 self.count += 1
+                logger.info(
+                    "Optimize cycle complete: trained %s file(s), %s sample(s), %s optimizer step(s), total_steps=%s, candidate=%s",
+                    len(files),
+                    sample_count,
+                    steps,
+                    total_steps,
+                    candidate_path,
+                )
                 self.clear_dataset()
                 self.backup_play_data(files)
             else:
@@ -216,6 +227,7 @@ class OptimizeWorker:
     def publish_candidate_model(self):
         logger.info("Publishing candidate model for evaluation.")
         save_as_next_generation_model(self.model)
+        return self.config.resource.next_generation_weight_path
 
     def decide_learning_rate(self, total_steps):
         ret = None
@@ -257,6 +269,53 @@ def load_data_from_file(filename, use_history=False):
 
 
 def expanding_data(data, use_history=False):
+    chunks = split_data_by_game(data)
+    if not chunks:
+        return None
+
+    expanded_chunks = []
+    for chunk in chunks:
+        expanded = expand_game_data(chunk, use_history)
+        if expanded is not None and len(expanded[0]) > 0:
+            expanded_chunks.append(expanded)
+
+    if not expanded_chunks:
+        return None
+    if len(expanded_chunks) == 1:
+        return expanded_chunks[0]
+
+    return tuple(np.concatenate(items, axis=0) for items in zip(*expanded_chunks))
+
+
+def split_data_by_game(data):
+    if not data:
+        logger.error("Expand data error: empty play data file")
+        return []
+
+    chunks = []
+    current = None
+    for item in data:
+        if isinstance(item, str):
+            if current is not None and len(current) > 1:
+                chunks.append(current)
+            elif current is not None:
+                logger.warning("Skipping empty game chunk with state only: %s", current[0])
+            current = [item]
+        else:
+            if current is None:
+                logger.error("Expand data error: move record encountered before initial state, data = %s", data)
+                return []
+            current.append(item)
+
+    if current is not None and len(current) > 1:
+        chunks.append(current)
+    elif current is not None:
+        logger.warning("Skipping empty trailing game chunk with state only: %s", current[0])
+
+    return chunks
+
+
+def expand_game_data(data, use_history=False):
     state = data[0]
     real_data = []
     if use_history:
