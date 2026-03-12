@@ -21,6 +21,8 @@ class Config:
             from cchess_alphazero.configs import mini as c
         elif config_type == "normal":
             from cchess_alphazero.configs import normal as c
+        elif config_type == "local_torch":
+            from cchess_alphazero.configs import local_torch as c
         elif config_type == 'distribute':
             import cchess_alphazero.configs.distribute as c
         else:

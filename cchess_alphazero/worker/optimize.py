@@ -5,6 +5,7 @@ from collections import deque
 from concurrent.futures import ProcessPoolExecutor
 from logging import getLogger
 from random import shuffle
+from time import sleep
 
 import numpy as np
 
@@ -15,9 +16,10 @@ from cchess_alphazero.environment.lookup_tables import ActionLabelsRed, flip_pol
 from cchess_alphazero.lib.data_helper import get_game_data_filenames, read_game_data_from_file
 from cchess_alphazero.lib.model_helper import (
     build_fresh_best_model,
+    is_next_generation_model_fresh,
     load_best_model_weight,
     need_to_reload_best_model_weight,
-    save_as_best_model,
+    next_generation_model_exists,
     save_as_next_generation_model,
 )
 from cchess_alphazero.lib.tf_util import set_session_config
@@ -34,13 +36,13 @@ class OptimizeWorker:
     def __init__(self, config: Config):
         self.config = config
         self.model = None
-        self.loaded_filenames = set()
-        self.loaded_data = deque(maxlen=self.config.trainer.dataset_size)
         self.dataset = deque(), deque(), deque()
-        self.executor = ProcessPoolExecutor(max_workers=config.trainer.cleaning_processes)
         self.filenames = []
         self.count = 0
-        self.eva = False
+
+    @property
+    def polling_interval(self):
+        return max(1.0, float(getattr(self.config.trainer, "polling_interval", 300)))
 
     def start(self):
         self.model = self.load_model()
@@ -50,49 +52,101 @@ class OptimizeWorker:
         self.compile_model()
         total_steps = self.config.trainer.start_total_steps
         last_file = None
+        waiting_for_data = False
+        waiting_for_candidate = False
 
         while True:
-            files = get_game_data_filenames(self.config.resource)
-            offset = self.config.trainer.min_games_to_begin_learn
-            if (
-                len(files) < self.config.trainer.min_games_to_begin_learn
-                or ((last_file is not None and last_file in files) and files.index(last_file) + 1 + offset > len(files))
-            ):
-                if last_file is not None:
-                    self.save_current_model(send=True)
-                break
+            if self.try_reload_model():
+                logger.info("Reloaded BestModel before the next optimize cycle.")
+                self.compile_model()
 
-            if last_file is not None and last_file in files:
-                idx = files.index(last_file) + 1
-                if len(files) - idx > self.config.trainer.load_step:
-                    files = files[idx:idx + self.config.trainer.load_step]
-                else:
-                    files = files[idx:]
-            elif len(files) > self.config.trainer.load_step:
-                files = files[0:self.config.trainer.load_step]
+            if self.has_pending_candidate():
+                if not waiting_for_candidate:
+                    logger.info(
+                        "Candidate model is awaiting evaluation; optimizer will poll again in %.1f seconds.",
+                        self.polling_interval,
+                    )
+                    waiting_for_candidate = True
+                sleep(self.polling_interval)
+                continue
+            waiting_for_candidate = False
+
+            files = get_game_data_filenames(self.config.resource)
+            if not self.has_enough_new_data(files, last_file):
+                if not waiting_for_data:
+                    last_file_label = os.path.basename(last_file) if last_file else "the start of training"
+                    logger.info(
+                        "Waiting for more play data; need at least %s total file(s) and %s unseen file(s) after %s. Found %s file(s). Polling again in %.1f seconds.",
+                        self.config.trainer.min_games_to_begin_learn,
+                        self.config.trainer.min_games_to_begin_learn,
+                        last_file_label,
+                        len(files),
+                        self.polling_interval,
+                    )
+                    waiting_for_data = True
+                sleep(self.polling_interval)
+                continue
+            waiting_for_data = False
+
+            files = self.select_files_to_train(files, last_file)
+            if not files:
+                logger.info("No unseen play-data files were selected; polling again in %.1f seconds.", self.polling_interval)
+                sleep(self.polling_interval)
+                continue
 
             last_file = files[-1]
-            logger.info(f"Last file = {last_file}")
-            logger.debug(f"files = {files[0:-1:2000]}")
+            logger.info("Last file = %s", last_file)
+            logger.debug("Start training %s files", len(files))
             self.filenames = deque(files)
-            logger.debug(f"Start training {len(self.filenames)} files")
             shuffle(self.filenames)
             self.fill_queue()
             self.update_learning_rate(total_steps)
-            if len(self.dataset[0]) > self.config.trainer.batch_size:
+            if len(self.dataset[0]) >= self.config.trainer.batch_size:
                 steps = self.train_epoch(self.config.trainer.epoch_to_checkpoint)
                 total_steps += steps
-                self.save_current_model(send=False)
+                self.publish_candidate_model()
                 self.update_learning_rate(total_steps)
                 self.count += 1
-                a, b, c = self.dataset
-                a.clear()
-                b.clear()
-                c.clear()
-                del self.dataset, a, b, c
-                gc.collect()
-                self.dataset = deque(), deque(), deque()
+                self.clear_dataset()
                 self.backup_play_data(files)
+            else:
+                logger.warning(
+                    "Collected %s sample(s) from %s file(s), below batch size %s; keeping the data in memory for the next pass.",
+                    len(self.dataset[0]),
+                    len(files),
+                    self.config.trainer.batch_size,
+                )
+
+    def has_enough_new_data(self, files, last_file):
+        required = self.config.trainer.min_games_to_begin_learn
+        if len(files) < required:
+            return False
+        if last_file is None or last_file not in files:
+            return True
+        next_idx = files.index(last_file) + 1
+        return len(files) - next_idx >= required
+
+    def select_files_to_train(self, files, last_file):
+        if last_file is not None and last_file in files:
+            start_idx = files.index(last_file) + 1
+            return files[start_idx:start_idx + self.config.trainer.load_step]
+        return files[:self.config.trainer.load_step]
+
+    def has_pending_candidate(self):
+        if not next_generation_model_exists(self.config):
+            return False
+        if not self.config.opts.new:
+            return True
+        return is_next_generation_model_fresh(self.config)
+
+    def clear_dataset(self):
+        state_ary, policy_ary, value_ary = self.dataset
+        state_ary.clear()
+        policy_ary.clear()
+        value_ary.clear()
+        del self.dataset, state_ary, policy_ary, value_ary
+        gc.collect()
+        self.dataset = deque(), deque(), deque()
 
     def train_epoch(self, epochs):
         tc = self.config.trainer
@@ -134,9 +188,9 @@ class OptimizeWorker:
                 filename = self.filenames.pop()
                 futures.append(executor.submit(load_data_from_file, filename, self.config.opts.has_history))
             while futures and len(self.dataset[0]) < self.config.trainer.dataset_size:
-                _tuple = futures.popleft().result()
-                if _tuple is not None:
-                    for x, y in zip(self.dataset, _tuple):
+                loaded_tuple = futures.popleft().result()
+                if loaded_tuple is not None:
+                    for x, y in zip(self.dataset, loaded_tuple):
                         x.extend(y)
                 m = len(self.filenames)
                 if m > 0:
@@ -159,12 +213,9 @@ class OptimizeWorker:
             build_fresh_best_model(model)
         return model
 
-    def save_current_model(self, send=False):
-        logger.info("Save as ng model")
-        if not send:
-            save_as_best_model(self.model)
-        else:
-            save_as_next_generation_model(self.model)
+    def publish_candidate_model(self):
+        logger.info("Publishing candidate model for evaluation.")
+        save_as_next_generation_model(self.model)
 
     def decide_learning_rate(self, total_steps):
         ret = None
@@ -181,7 +232,7 @@ class OptimizeWorker:
         return False
 
     def backup_play_data(self, files):
-        backup_folder = os.path.join(self.config.resource.data_dir, 'trained')
+        backup_folder = os.path.join(self.config.resource.data_dir, "trained")
         cnt = 0
         if not os.path.exists(backup_folder):
             os.makedirs(backup_folder)
@@ -257,6 +308,3 @@ def build_policy(action, flip):
     if flip:
         policy = flip_policy(policy)
     return list(policy)
-
-
-

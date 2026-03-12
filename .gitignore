@@ -6,4 +6,5 @@ logs/*
 Icon*
 .vscode
 *.icloud
-mydata/
+
+validation_local_torch_*/

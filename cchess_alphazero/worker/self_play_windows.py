@@ -181,10 +181,10 @@ def self_play_buffer(config, cur, use_history=False) -> (tuple, list):
         action, policy = player.action(state, turns, no_act, increase_temp=increase_temp)
         end_time = time()
         if action is None:
-            print(f"{turns % 2} (0 = 红; 1 = 黑) 投降了!")
+            print(f"{turns % 2} (0 = red; 1 = black) resigned!", flush=True)
             value = -1
             break
-        print(f"博弈中: 回合{turns / 2 + 1} {'红方走棋' if turns % 2 == 0 else '黑方走棋'}, 着法: {action}, 用时: {(end_time - start_time):.1f}s")
+        print(f"Self-play: turn {turns / 2 + 1:.1f} {'red' if turns % 2 == 0 else 'black'} action={action} time={(end_time - start_time):.1f}s", flush=True)
         # policys.append(policy)
         history.append(action)
         try:
