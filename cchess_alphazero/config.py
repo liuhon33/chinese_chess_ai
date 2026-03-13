@@ -15,6 +15,7 @@ class Config:
     def __init__(self, config_type="mini"):
         self.opts = Options()
         self.cluster = ClusterConfig()
+        self.terminal_log = TerminalLogConfig()
         self.resource = ResourceConfig()
         self.internet = InternetConfig()
 
@@ -138,6 +139,18 @@ class ClusterConfig:
         self.archive_consumed_data = False
         self.optimizer_poll_interval = None
         self.evaluator_poll_interval = None
+
+
+class TerminalLogConfig:
+    def __init__(self):
+        self.style = None
+        self.log_moves = False
+        self.log_game_summary = False
+        self.log_buffer_flush = False
+        self.log_model_reload = False
+        self.log_worker_prefix = False
+        self.log_pid = False
+        self.log_node_info = False
 
 
 class PlayWithHumanConfig:

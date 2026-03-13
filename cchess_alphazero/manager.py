@@ -41,11 +41,20 @@ def create_parser():
     parser.add_argument("--archive-consumed-data", help="archive claimed play-data files after optimization", action="store_true")
     parser.add_argument("--optimizer-poll-interval", help="seconds between optimizer directory polls", type=float)
     parser.add_argument("--evaluator-poll-interval", help="seconds between evaluator directory polls", type=float)
+    parser.add_argument("--terminal-log-style", help="terminal log style", choices=["linux"])
+    parser.add_argument("--log-moves", help="emit per-move terminal logs", action="store_true")
+    parser.add_argument("--log-game-summary", help="emit per-game terminal summaries", action="store_true")
+    parser.add_argument("--log-buffer-flush", help="emit play-data flush terminal logs", action="store_true")
+    parser.add_argument("--log-model-reload", help="emit model reload terminal logs", action="store_true")
+    parser.add_argument("--log-worker-prefix", help="prefix terminal logs with role/worker info", action="store_true")
+    parser.add_argument("--log-pid", help="include pid in terminal log prefixes", action="store_true")
+    parser.add_argument("--log-node-info", help="include hostname in terminal log prefixes", action="store_true")
     return parser
 
 
 def setup(config: Config, args):
     config.opts.new = args.new
+    config.opts.log_move = args.log_moves
     if args.total_step is not None:
         config.trainer.start_total_steps = args.total_step
     config.opts.device_list = args.gpu
@@ -59,6 +68,14 @@ def setup(config: Config, args):
     config.cluster.archive_consumed_data = args.archive_consumed_data
     config.cluster.optimizer_poll_interval = args.optimizer_poll_interval
     config.cluster.evaluator_poll_interval = args.evaluator_poll_interval
+    config.terminal_log.style = args.terminal_log_style
+    config.terminal_log.log_moves = args.log_moves
+    config.terminal_log.log_game_summary = args.log_game_summary
+    config.terminal_log.log_buffer_flush = args.log_buffer_flush
+    config.terminal_log.log_model_reload = args.log_model_reload
+    config.terminal_log.log_worker_prefix = args.log_worker_prefix
+    config.terminal_log.log_pid = args.log_pid
+    config.terminal_log.log_node_info = args.log_node_info
     config.resource.create_directories()
     if args.cmd == 'self':
         setup_logger(config.resource.main_log_path)

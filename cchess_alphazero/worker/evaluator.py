@@ -17,6 +17,7 @@ from cchess_alphazero.lib.model_helper import (
     load_model_weight,
     promote_next_generation_to_best,
 )
+from cchess_alphazero.lib.terminal_logger import emit_terminal_log, should_log_game_summary
 from cchess_alphazero.lib.tf_util import set_session_config
 from cchess_alphazero.lib.training_monitor import estimate_match_elo, record_eval_metrics
 
@@ -25,6 +26,7 @@ logger = getLogger(__name__)
 
 def start(config: Config):
     set_session_config(per_process_gpu_memory_fraction=1, allow_growth=True, device_list=config.opts.device_list)
+    emit_terminal_log(config, "eval", "worker started", worker_id=config.cluster.worker_id)
     return ContinuousEvaluator(config).start()
 
 
@@ -57,6 +59,13 @@ class ContinuousEvaluator:
                 self.config.resource.next_generation_weight_path,
                 self.config.resource.model_best_weight_path,
             )
+            if should_log_game_summary(self.config):
+                emit_terminal_log(
+                    self.config,
+                    "eval",
+                    f"start candidate={self.config.resource.next_generation_weight_path} best={self.config.resource.model_best_weight_path}",
+                    worker_id=self.config.cluster.worker_id,
+                )
             result = evaluate_next_generation_model(self.config)
             if result is None:
                 logger.info("Candidate model was missing or stale when evaluation started; returning to polling.")
@@ -137,6 +146,13 @@ def evaluate_next_generation_model(config: Config):
         game_num = config.eval.game_num * config.play.max_processes
         win_rate = total_score * 100 / game_num
         logger.info("Evaluate over, next generation win %s/%s = %.2f%%", total_score, game_num, win_rate)
+        if should_log_game_summary(config):
+            emit_terminal_log(
+                config,
+                "eval",
+                f"match total_score={total_score} games={game_num} win_rate={win_rate:.2f}% wins={wins} losses={losses} draws={draws}",
+                worker_id=config.cluster.worker_id,
+            )
         logger.info("红\t黑\t胜\t平\t负")
         logger.info("新\t旧\t%s\t%s\t%s", red_new_win, red_new_draw, red_new_fail)
         logger.info("旧\t新\t%s\t%s\t%s", black_new_win, black_new_draw, black_new_fail)
@@ -389,3 +405,4 @@ def load_model(config, config_path, weight_path, name=None):
     if not load_model_weight(model, config_path, weight_path, name):
         return None
     return model
+

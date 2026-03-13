@@ -30,6 +30,7 @@ from cchess_alphazero.lib.model_helper import (
     next_generation_model_exists,
     save_as_next_generation_model,
 )
+from cchess_alphazero.lib.terminal_logger import emit_terminal_log, should_log_game_summary, should_log_model_reload
 from cchess_alphazero.lib.tf_util import set_session_config
 from cchess_alphazero.lib.training_monitor import save_training_state
 
@@ -55,6 +56,7 @@ class OptimizeWorker:
 
     def start(self):
         self.model = self.load_model()
+        emit_terminal_log(self.config, "opt", "worker started", worker_id=self.config.cluster.worker_id)
         self.training()
 
     def training(self):
@@ -139,6 +141,13 @@ class OptimizeWorker:
                     total_steps,
                     candidate_path,
                 )
+                if should_log_game_summary(self.config):
+                    emit_terminal_log(
+                        self.config,
+                        "opt",
+                        f"cycle files={len(files_to_train)} samples={sample_count} steps={steps} total_steps={total_steps} candidate={candidate_path}",
+                        worker_id=self.config.cluster.worker_id,
+                    )
                 self.clear_dataset()
                 if self.cluster_mode:
                     self.finalize_claimed_files(claimed_files)
@@ -305,6 +314,8 @@ class OptimizeWorker:
         logger.debug("check model")
         if need_to_reload_best_model_weight(self.model):
             load_best_model_weight(self.model)
+            if should_log_model_reload(self.config):
+                emit_terminal_log(self.config, "opt", "reloaded best model", worker_id=self.config.cluster.worker_id)
             return True
         return False
 
@@ -433,5 +444,7 @@ def build_policy(action, flip):
     if flip:
         policy = flip_policy(policy)
     return list(policy)
+
+
 
 

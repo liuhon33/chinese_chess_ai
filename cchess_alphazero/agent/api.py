@@ -11,6 +11,7 @@ from logging import getLogger
 from cchess_alphazero.config import Config
 from cchess_alphazero.lib.cluster_helper import auto_reload_best_enabled, best_model_reload_interval
 from cchess_alphazero.lib.model_helper import load_best_model_weight, need_to_reload_best_model_weight
+from cchess_alphazero.lib.terminal_logger import emit_terminal_log, should_log_model_reload
 from cchess_alphazero.lib.web_helper import download_file, http_request
 
 logger = getLogger(__name__)
@@ -94,6 +95,10 @@ class CChessModelAPI:
             else:
                 if self.need_reload and auto_reload_best_enabled(self.config) and need_to_reload_best_model_weight(self.agent_model):
                     load_best_model_weight(self.agent_model)
+                    if should_log_model_reload(self.config):
+                        emit_terminal_log(self.config, "model", "reloaded best model", worker_id=self.config.cluster.worker_id)
+                elif should_log_model_reload(self.config):
+                    emit_terminal_log(self.config, "model", "checked best model; unchanged", worker_id=self.config.cluster.worker_id)
         except Exception as e:
             logger.error(e)
 
@@ -112,6 +117,8 @@ class CChessModelAPI:
                 logger.info(f"权重下载完毕！开始训练...")
                 try:
                     load_best_model_weight(self.agent_model)
+                    if should_log_model_reload(self.config):
+                        emit_terminal_log(self.config, "model", "downloaded and reloaded best model", worker_id=self.config.cluster.worker_id)
                 except ValueError as e:
                     logger.error(f"权重架构不匹配，停止自动重载: {e}")
                     if os.path.exists(self.config.resource.model_best_weight_path):
@@ -124,6 +131,8 @@ class CChessModelAPI:
                 logger.error(f"权重下载失败！请检查网络连接，并重新打开客户端")
         else:
             logger.info(f"检查完毕，权重未更新")
+            if should_log_model_reload(self.config):
+                emit_terminal_log(self.config, "model", "checked remote best model; unchanged", worker_id=self.config.cluster.worker_id)
 
     def close(self):
         self.done = True
