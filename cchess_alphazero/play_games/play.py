@@ -74,6 +74,7 @@ class PlayWithHuman:
         self.rec_labels = [None] * self.disp_record_num
         self.nn_value = 0
         self.mcts_moves = {}
+        self.analysis_arrows = []
         self.history = []
         if self.config.opts.bg_style == 'WOOD':
             self.chessman_w += 1
@@ -187,6 +188,11 @@ class PlayWithHuman:
             col_num * self.chessman_w + self.chessman_w / 2,
             (9 - row_num) * self.chessman_h + self.chessman_h / 2,
         )
+
+    def move_to_board_points(self, move, red_to_move):
+        display_move = move if red_to_move else flip_move(move)
+        x0, y0, x1, y1 = (int(display_move[i]) for i in range(4))
+        return (x0, y0), (x1, y1)
 
     def distance_to_piece_center(self, sprite, screen_x, screen_y):
         center_x, center_y = sprite.rect.center
@@ -309,12 +315,29 @@ class PlayWithHuman:
         logger.info(f"check = {check}, NN value = {self.nn_value:.3f}")
         logger.info("MCTS results:")
         self.mcts_moves = {}
+        top_moves = sorted(
+            self.ai.search_results.items(),
+            key=lambda item: item[1][0],
+            reverse=True,
+        )[:3]
+        self.analysis_arrows = []
         for move, action_state in self.ai.search_results.items():
             move_cn = self.env.board.make_single_record(int(move[0]), int(move[1]), int(move[2]), int(move[3]))
             logger.info(
                 f"move: {move_cn}-{move}, visit count: {action_state[0]}, Q_value: {action_state[1]:.3f}, Prior: {action_state[2]:.3f}"
             )
             self.mcts_moves[move_cn] = action_state
+        for index, (move, action_state) in enumerate(top_moves):
+            start_pos, end_pos = self.move_to_board_points(move, self.env.red_to_move)
+            self.analysis_arrows.append(
+                {
+                    "rank": index,
+                    "move": move,
+                    "start": start_pos,
+                    "end": end_pos,
+                    "visits": action_state[0],
+                }
+            )
 
     def request_analysis(self):
         if not self.analysis_only:
@@ -323,6 +346,69 @@ class PlayWithHuman:
             self.analysis_request_id += 1
         self.nn_value = 0
         self.mcts_moves = {}
+        self.analysis_arrows = []
+
+    def draw_move_arrow(self, screen, start_pos, end_pos, color, width=6):
+        start_x, start_y = self.board_to_screen(*start_pos)
+        end_x, end_y = self.board_to_screen(*end_pos)
+        dx = end_x - start_x
+        dy = end_y - start_y
+        length = math.hypot(dx, dy)
+        if length < 1:
+            return
+
+        ux = dx / length
+        uy = dy / length
+        piece_radius = min(self.chessman_w, self.chessman_h) * 0.32
+        start = (
+            start_x + ux * piece_radius,
+            start_y + uy * piece_radius,
+        )
+        end = (
+            end_x - ux * piece_radius,
+            end_y - uy * piece_radius,
+        )
+        head_length = min(18, max(10, int(min(self.chessman_w, self.chessman_h) * 0.28)))
+        head_width = max(8, int(width * 1.8))
+        perp_x = -uy
+        perp_y = ux
+        head_base = (
+            end[0] - ux * head_length,
+            end[1] - uy * head_length,
+        )
+
+        pygame.draw.line(screen, color, start, end, width)
+        pygame.draw.polygon(
+            screen,
+            color,
+            [
+                end,
+                (
+                    head_base[0] + perp_x * head_width / 2,
+                    head_base[1] + perp_y * head_width / 2,
+                ),
+                (
+                    head_base[0] - perp_x * head_width / 2,
+                    head_base[1] - perp_y * head_width / 2,
+                ),
+            ],
+        )
+
+    def draw_analysis_arrows(self, screen):
+        if not self.analysis_only or not self.analysis_arrows:
+            return
+
+        arrow_colors = [
+            (255, 90, 90, 200),
+            (90, 220, 120, 200),
+            (80, 170, 255, 200),
+        ]
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        for arrow in self.analysis_arrows[:3]:
+            color = arrow_colors[min(arrow["rank"], len(arrow_colors) - 1)]
+            width = 7 if arrow["rank"] == 0 else 5
+            self.draw_move_arrow(overlay, arrow["start"], arrow["end"], color, width=width)
+        screen.blit(overlay, (0, 0))
 
     def analysis_worker(self):
         last_request_id = 0
@@ -486,12 +572,12 @@ class PlayWithHuman:
 
             self.draw_widget(screen, widget_background)
             framerate.tick(20)
-            # clear/erase the last drawn sprites
-            self.chessmans.clear(screen, board_background)
+            screen.blit(board_background, (0, 0))
 
             # update all the sprites
             self.chessmans.update()
             self.chessmans.draw(screen)
+            self.draw_analysis_arrows(screen)
             pygame.display.update()
 
         self.ai.close(wait=False)
