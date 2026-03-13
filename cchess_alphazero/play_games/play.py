@@ -1,15 +1,17 @@
+import math
+import os
 import sys
 import pygame
 import random
-import os.path
 import time
 import copy
 import numpy as np
+from pathlib import Path
 
 from pygame.locals import *
 from logging import getLogger
 from collections import defaultdict
-from threading import Thread
+from threading import Lock, Thread
 from time import sleep
 from datetime import datetime
 
@@ -26,14 +28,32 @@ from cchess_alphazero.lib.model_helper import load_best_model_weight
 from cchess_alphazero.lib.tf_util import set_session_config
 
 logger = getLogger(__name__)
-main_dir = os.path.split(os.path.abspath(__file__))[0]
+PLAY_GAMES_DIR = Path(__file__).resolve().parent
+IMAGES_DIR = PLAY_GAMES_DIR / "images"
+DEFAULT_FONT_PATH = PLAY_GAMES_DIR / "PingFang.ttc"
+CHINESE_FONT_SAMPLE = "着法记录当前局势评估搜索次数动作价值先验概率"
+CHINESE_FONT_FALLBACKS = [
+    "Microsoft YaHei",
+    "SimHei",
+    "PingFang SC",
+    "PingFang TC",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK TC",
+    "Noto Sans CJK JP",
+    "Source Han Sans SC",
+    "Source Han Sans CN",
+    "WenQuanYi Zen Hei",
+    "Arial Unicode MS",
+]
 PIECE_STYLE = 'WOOD'
+
 
 def start(config: Config, human_move_first=True):
     global PIECE_STYLE
     PIECE_STYLE = config.opts.piece_style
     play = PlayWithHuman(config)
     play.start(human_move_first)
+
 
 class PlayWithHuman:
     def __init__(self, config: Config):
@@ -58,11 +78,275 @@ class PlayWithHuman:
         if self.config.opts.bg_style == 'WOOD':
             self.chessman_w += 1
             self.chessman_h += 1
+        self.board_rect = Rect(0, 0, self.width, self.height)
+        self.board_click_tolerance = int(round(min(self.chessman_w, self.chessman_h) * 0.65))
+        self.piece_click_tolerance = int(round(min(self.chessman_w, self.chessman_h) * 0.60))
+        self.gui_debug = bool(getattr(self.config.opts, "debug_gui", False))
+        self.analysis_only = bool(getattr(self.config.opts, "analysis_only", False))
+        self.preferred_font_path = self.resolve_font_path()
+        self.font_cache = {}
+        self.font_warning_cache = set()
+        self.analysis_lock = Lock()
+        self.analysis_request_id = 0
+
+    def resolve_font_path(self):
+        configured_font = getattr(self.config.resource, "font_path", None)
+        candidate_paths = []
+        if configured_font:
+            candidate_paths.append(Path(configured_font))
+        candidate_paths.append(DEFAULT_FONT_PATH)
+
+        seen = set()
+        for candidate in candidate_paths:
+            candidate = candidate.expanduser()
+            if not candidate.is_absolute():
+                candidate = PLAY_GAMES_DIR / candidate
+            candidate = candidate.resolve()
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if candidate.exists():
+                return candidate
+
+        checked = ", ".join(str(path) for path in seen)
+        logger.warning(
+            "Chinese font asset missing; checked %s. Falling back to system fonts.",
+            checked,
+        )
+        return None
 
     def load_model(self):
         self.model = CChessModel(self.config)
         if self.config.opts.new or not load_best_model_weight(self.model):
             self.model.build()
+
+    def font_supports_text(self, font, text=CHINESE_FONT_SAMPLE):
+        try:
+            metrics = font.metrics(text)
+        except pygame.error:
+            return False
+        return bool(metrics) and all(metric is not None for metric in metrics)
+
+    def log_font_warning_once(self, key, message, *args):
+        if key in self.font_warning_cache:
+            return
+        self.font_warning_cache.add(key)
+        logger.warning(message, *args)
+
+    def load_font_with_fallback(self, size, prefer_chinese=True):
+        cache_key = (size, prefer_chinese)
+        if cache_key in self.font_cache:
+            return self.font_cache[cache_key]
+
+        if self.preferred_font_path is not None:
+            try:
+                font = pygame.font.Font(str(self.preferred_font_path), size)
+                if not prefer_chinese or self.font_supports_text(font):
+                    self.font_cache[cache_key] = font
+                    return font
+                self.log_font_warning_once(
+                    ("font-glyphs", str(self.preferred_font_path)),
+                    "Bundled font %s does not render required Chinese glyphs. Falling back to system fonts.",
+                    self.preferred_font_path,
+                )
+            except (FileNotFoundError, OSError, pygame.error) as exc:
+                self.log_font_warning_once(
+                    ("font-file", str(self.preferred_font_path)),
+                    "Failed to load bundled font %s (%s). Falling back to system fonts.",
+                    self.preferred_font_path,
+                    exc,
+                )
+                self.preferred_font_path = None
+
+        if prefer_chinese:
+            for font_name in CHINESE_FONT_FALLBACKS:
+                try:
+                    font = pygame.font.SysFont(font_name, size)
+                except pygame.error:
+                    continue
+                if self.font_supports_text(font):
+                    self.log_font_warning_once(
+                        ("font-system", font_name),
+                        "Using system font fallback '%s' for Chinese text.",
+                        font_name,
+                    )
+                    self.font_cache[cache_key] = font
+                    return font
+
+            self.log_font_warning_once(
+                ("font-default", size),
+                "No Chinese-capable bundled/system font found; using pygame default font.",
+            )
+
+        font = pygame.font.Font(None, size)
+        self.font_cache[cache_key] = font
+        return font
+
+    def board_to_screen(self, col_num, row_num):
+        return (
+            col_num * self.chessman_w + self.chessman_w / 2,
+            (9 - row_num) * self.chessman_h + self.chessman_h / 2,
+        )
+
+    def distance_to_piece_center(self, sprite, screen_x, screen_y):
+        center_x, center_y = sprite.rect.center
+        return math.hypot(screen_x - center_x, screen_y - center_y)
+
+    def find_sprite_near_point(self, screen_x, screen_y):
+        nearest_sprite = None
+        nearest_distance = None
+        for sprite in self.chessmans:
+            distance = self.distance_to_piece_center(sprite, screen_x, screen_y)
+            if distance <= self.piece_click_tolerance and (
+                nearest_distance is None or distance < nearest_distance
+            ):
+                nearest_sprite = sprite
+                nearest_distance = distance
+        return nearest_sprite
+
+    def screen_to_board(self, screen_x, screen_y):
+        tolerance = self.board_click_tolerance
+        if (
+            screen_x < -tolerance
+            or screen_y < -tolerance
+            or screen_x > self.width + tolerance
+            or screen_y > self.height + tolerance
+        ):
+            self.log_gui_event(
+                "Click (%s, %s) rejected: outside board bounds.",
+                screen_x,
+                screen_y,
+            )
+            return None
+
+        col_num = round((screen_x - self.chessman_w / 2) / self.chessman_w)
+        row_num = round(9 - ((screen_y - self.chessman_h / 2) / self.chessman_h))
+        if not (0 <= col_num <= 8 and 0 <= row_num <= 9):
+            self.log_gui_event(
+                "Click (%s, %s) rejected: mapped to invalid board coordinate (%s, %s).",
+                screen_x,
+                screen_y,
+                col_num,
+                row_num,
+            )
+            return None
+
+        center_x, center_y = self.board_to_screen(col_num, row_num)
+        distance = math.hypot(screen_x - center_x, screen_y - center_y)
+        if distance > tolerance:
+            self.log_gui_event(
+                "Click (%s, %s) rejected: nearest board coordinate (%s, %s) is %.2f px away (tolerance=%s).",
+                screen_x,
+                screen_y,
+                col_num,
+                row_num,
+                distance,
+                tolerance,
+            )
+            return None
+
+        self.log_gui_event(
+            "Click (%s, %s) mapped to board coordinate (%s, %s) with distance %.2f.",
+            screen_x,
+            screen_y,
+            col_num,
+            row_num,
+            distance,
+        )
+        return col_num, row_num
+
+    def resolve_click_target(self, screen_x, screen_y):
+        sprite = self.find_sprite_near_point(screen_x, screen_y)
+        if sprite is not None:
+            board_pos = (sprite.chessman.col_num, sprite.chessman.row_num)
+            self.log_gui_event(
+                "Click (%s, %s) snapped to piece at %s with center distance %.2f.",
+                screen_x,
+                screen_y,
+                board_pos,
+                self.distance_to_piece_center(sprite, screen_x, screen_y),
+            )
+            return board_pos, sprite
+
+        board_pos = self.screen_to_board(screen_x, screen_y)
+        if board_pos is None:
+            return None, None
+
+        sprite = select_sprite_from_group(self.chessmans, board_pos[0], board_pos[1])
+        return board_pos, sprite
+
+    def log_gui_event(self, message, *args):
+        if self.gui_debug:
+            logger.info("GUI: " + message, *args)
+
+
+    def can_human_move(self):
+        return self.analysis_only or self.human_move_first == self.env.red_to_move
+
+    def build_no_act(self, state, history):
+        no_act = None
+        _, _, _, check = senv.done(state, need_check=True)
+        if not check and state in history[:-1]:
+            no_act = []
+            free_move = defaultdict(int)
+            for i in range(len(history) - 1):
+                if history[i] == state:
+                    if senv.will_check_or_catch(state, history[i + 1]):
+                        no_act.append(history[i + 1])
+                    else:
+                        free_move[state] += 1
+                        if free_move[state] >= 2:
+                            self.env.winner = Winner.draw
+                            self.env.board.winner = Winner.draw
+                            break
+            if no_act:
+                logger.debug(f"no_act = {no_act}")
+        return no_act, check
+
+    def update_analysis_panel(self, state, check):
+        debug_info = self.ai.debug.get(state)
+        self.nn_value = debug_info[1] if debug_info else 0
+        logger.info(f"check = {check}, NN value = {self.nn_value:.3f}")
+        logger.info("MCTS results:")
+        self.mcts_moves = {}
+        for move, action_state in self.ai.search_results.items():
+            move_cn = self.env.board.make_single_record(int(move[0]), int(move[1]), int(move[2]), int(move[3]))
+            logger.info(
+                f"move: {move_cn}-{move}, visit count: {action_state[0]}, Q_value: {action_state[1]:.3f}, Prior: {action_state[2]:.3f}"
+            )
+            self.mcts_moves[move_cn] = action_state
+
+    def request_analysis(self):
+        if not self.analysis_only:
+            return
+        with self.analysis_lock:
+            self.analysis_request_id += 1
+        self.nn_value = 0
+        self.mcts_moves = {}
+
+    def analysis_worker(self):
+        last_request_id = 0
+        while not self.env.board.is_end():
+            with self.analysis_lock:
+                request_id = self.analysis_request_id
+            if request_id == 0 or request_id == last_request_id:
+                sleep(0.05)
+                continue
+
+            last_request_id = request_id
+            state = self.env.get_state()
+            history = list(self.history)
+            turns = self.env.num_halfmoves
+            no_act, check = self.build_no_act(state, history)
+            self.ai.search_results = {}
+            self.ai.action(state, turns, no_act)
+
+            with self.analysis_lock:
+                if request_id != self.analysis_request_id:
+                    continue
+            if self.env.get_state() != state:
+                continue
+            self.update_analysis_panel(state, check)
 
     def init_screen(self):
         bestdepth = pygame.display.mode_ok([self.screen_width, self.height], self.winstyle, 32)
@@ -78,8 +362,7 @@ class PlayWithHuman:
         widget_background.fill((255, 255, 255), white_rect)
 
         #create text label
-        font_file = self.config.resource.font_path
-        font = pygame.font.Font(font_file, 16)
+        font = self.load_font_with_fallback(16, prefer_chinese=True)
         font_color = (0, 0, 0)
         font_background = (255, 255, 255)
         t = font.render("着法记录", True, font_color, font_background)
@@ -111,12 +394,16 @@ class PlayWithHuman:
         labels_n = len(ActionLabelsRed)
 
         current_chessman = None
-        if human_first:
+        if human_first or self.analysis_only:
             self.env.board.calc_chessmans_moving_list()
 
-        ai_worker = Thread(target=self.ai_move, name="ai_worker")
-        ai_worker.daemon = True
-        ai_worker.start()
+        self.history = [self.env.get_state()]
+        self.request_analysis()
+        worker_target = self.analysis_worker if self.analysis_only else self.ai_move
+        worker_name = "analysis_worker" if self.analysis_only else "ai_worker"
+        worker = Thread(target=worker_target, name=worker_name)
+        worker.daemon = True
+        worker.start()
 
         while not self.env.board.is_end():
             for event in pygame.event.get():
@@ -129,44 +416,73 @@ class PlayWithHuman:
                     sys.exit()
                 elif event.type == VIDEORESIZE:
                     pass
-                elif event.type == MOUSEBUTTONDOWN:
-                    if human_first == self.env.red_to_move:
-                        pressed_array = pygame.mouse.get_pressed()
-                        for index in range(len(pressed_array)):
-                            if index == 0 and pressed_array[index]:
-                                mouse_x, mouse_y = pygame.mouse.get_pos()
-                                col_num, row_num = translate_hit_area(mouse_x, mouse_y, self.chessman_w, self.chessman_h)
-                                chessman_sprite = select_sprite_from_group(
-                                    self.chessmans, col_num, row_num)
-                                if current_chessman is None and chessman_sprite != None:
-                                    if chessman_sprite.chessman.is_red == self.env.red_to_move:
-                                        current_chessman = chessman_sprite
-                                        chessman_sprite.is_selected = True
-                                elif current_chessman != None and chessman_sprite != None:
-                                    if chessman_sprite.chessman.is_red == self.env.red_to_move:
-                                        current_chessman.is_selected = False
-                                        current_chessman = chessman_sprite
-                                        chessman_sprite.is_selected = True
-                                    else:
-                                        move = str(current_chessman.chessman.col_num) + str(current_chessman.chessman.row_num) +\
-                                               str(col_num) + str(row_num)
-                                        success = current_chessman.move(col_num, row_num, self.chessman_w, self.chessman_h)
-                                        self.history.append(move)
-                                        if success:
-                                            self.chessmans.remove(chessman_sprite)
-                                            chessman_sprite.kill()
-                                            current_chessman.is_selected = False
-                                            current_chessman = None
-                                            self.history.append(self.env.get_state())
-                                elif current_chessman != None and chessman_sprite is None:
-                                    move = str(current_chessman.chessman.col_num) + str(current_chessman.chessman.row_num) +\
-                                           str(col_num) + str(row_num)
-                                    success = current_chessman.move(col_num, row_num, self.chessman_w, self.chessman_h)
+                elif event.type == MOUSEBUTTONDOWN and event.button == 1:
+                    if self.can_human_move():
+                        mouse_x, mouse_y = event.pos
+                        board_pos, chessman_sprite = self.resolve_click_target(mouse_x, mouse_y)
+                        if board_pos is None:
+                            continue
+
+                        col_num, row_num = board_pos
+                        if current_chessman is None and chessman_sprite is not None:
+                            if chessman_sprite.chessman.is_red == self.env.red_to_move:
+                                current_chessman = chessman_sprite
+                                chessman_sprite.is_selected = True
+                                self.log_gui_event(
+                                    "Selected piece at (%s, %s).",
+                                    chessman_sprite.chessman.col_num,
+                                    chessman_sprite.chessman.row_num,
+                                )
+                        elif current_chessman is not None and chessman_sprite is not None:
+                            if chessman_sprite.chessman.is_red == self.env.red_to_move:
+                                current_chessman.is_selected = False
+                                current_chessman = chessman_sprite
+                                chessman_sprite.is_selected = True
+                                self.log_gui_event(
+                                    "Reselected piece at (%s, %s).",
+                                    chessman_sprite.chessman.col_num,
+                                    chessman_sprite.chessman.row_num,
+                                )
+                            else:
+                                from_pos = (
+                                    current_chessman.chessman.col_num,
+                                    current_chessman.chessman.row_num,
+                                )
+                                move = str(from_pos[0]) + str(from_pos[1]) + str(col_num) + str(row_num)
+                                success = current_chessman.move(col_num, row_num, self.chessman_w, self.chessman_h)
+                                self.log_gui_event(
+                                    "Tried capture move %s -> %s success=%s.",
+                                    from_pos,
+                                    (col_num, row_num),
+                                    success,
+                                )
+                                if success:
                                     self.history.append(move)
-                                    if success:
-                                        current_chessman.is_selected = False
-                                        current_chessman = None
-                                        self.history.append(self.env.get_state())
+                                    self.chessmans.remove(chessman_sprite)
+                                    chessman_sprite.kill()
+                                    current_chessman.is_selected = False
+                                    current_chessman = None
+                                    self.history.append(self.env.get_state())
+                                    self.request_analysis()
+                        elif current_chessman is not None and chessman_sprite is None:
+                            from_pos = (
+                                current_chessman.chessman.col_num,
+                                current_chessman.chessman.row_num,
+                            )
+                            move = str(from_pos[0]) + str(from_pos[1]) + str(col_num) + str(row_num)
+                            success = current_chessman.move(col_num, row_num, self.chessman_w, self.chessman_h)
+                            self.log_gui_event(
+                                "Tried move %s -> %s success=%s.",
+                                from_pos,
+                                (col_num, row_num),
+                                success,
+                            )
+                            if success:
+                                self.history.append(move)
+                                current_chessman.is_selected = False
+                                current_chessman = None
+                                self.history.append(self.env.get_state())
+                                self.request_analysis()
 
             self.draw_widget(screen, widget_background)
             framerate.tick(20)
@@ -188,51 +504,20 @@ class PlayWithHuman:
 
     def ai_move(self):
         ai_move_first = not self.human_move_first
-        self.history = [self.env.get_state()]
-        no_act = None
         while not self.env.done:
             if ai_move_first == self.env.red_to_move:
-                labels = ActionLabelsRed
-                labels_n = len(ActionLabelsRed)
                 self.ai.search_results = {}
                 state = self.env.get_state()
                 logger.info(f"state = {state}")
-                _, _, _, check = senv.done(state, need_check=True)
-                if not check and state in self.history[:-1]:
-                    no_act = []
-                    free_move = defaultdict(int)
-                    for i in range(len(self.history) - 1):
-                        if self.history[i] == state:
-                            # 如果走了下一步是将军或捉：禁止走那步
-                            if senv.will_check_or_catch(state, self.history[i+1]):
-                                no_act.append(self.history[i + 1])
-                            # 否则当作闲着处理
-                            else:
-                                free_move[state] += 1
-                                if free_move[state] >= 2:
-                                    # 作和棋处理
-                                    self.env.winner = Winner.draw
-                                    self.env.board.winner = Winner.draw
-                                    break
-                    if no_act:
-                        logger.debug(f"no_act = {no_act}")
-                action, policy = self.ai.action(state, self.env.num_halfmoves, no_act)
+                no_act, check = self.build_no_act(state, self.history)
+                action, _ = self.ai.action(state, self.env.num_halfmoves, no_act)
                 if action is None:
                     logger.info("AI has resigned!")
                     return
                 self.history.append(action)
                 if not self.env.red_to_move:
                     action = flip_move(action)
-                key = self.env.get_state()
-                p, v = self.ai.debug[key]
-                logger.info(f"check = {check}, NN value = {v:.3f}")
-                self.nn_value = v
-                logger.info("MCTS results:")
-                self.mcts_moves = {}
-                for move, action_state in self.ai.search_results.items():
-                    move_cn = self.env.board.make_single_record(int(move[0]), int(move[1]), int(move[2]), int(move[3]))
-                    logger.info(f"move: {move_cn}-{move}, visit count: {action_state[0]}, Q_value: {action_state[1]:.3f}, Prior: {action_state[2]:.3f}")
-                    self.mcts_moves[move_cn] = action_state
+                self.update_analysis_panel(state, check)
                 x0, y0, x1, y1 = int(action[0]), int(action[1]), int(action[2]), int(action[3])
                 chessman_sprite = select_sprite_from_group(self.chessmans, x0, y0)
                 sprite_dest = select_sprite_from_group(self.chessmans, x1, y1)
@@ -241,6 +526,8 @@ class PlayWithHuman:
                     sprite_dest.kill()
                 chessman_sprite.move(x1, y1, self.chessman_w, self.chessman_h)
                 self.history.append(self.env.get_state())
+            else:
+                sleep(0.05)
 
     def draw_widget(self, screen, widget_background):
         white_rect = Rect(0, 0, self.screen_width - self.width, self.height)
@@ -248,19 +535,17 @@ class PlayWithHuman:
         pygame.draw.line(widget_background, (255, 0, 0), (10, 285), (self.screen_width - self.width - 10, 285))
         screen.blit(widget_background, (self.width, 0))
         self.draw_records(screen, widget_background)
-        self.draw_evaluation(screen, widget_background) 
+        self.draw_evaluation(screen, widget_background)
 
     def draw_records(self, screen, widget_background):
         text = '着法记录'
         self.draw_label(screen, widget_background, text, 10, 16, 10)
         records = self.env.board.record.split('\n')
-        font_file = self.config.resource.font_path
-        font = pygame.font.Font(font_file, 12)
+        font = self.load_font_with_fallback(12, prefer_chinese=True)
         i = 0
         for record in records[-self.disp_record_num:]:
             self.rec_labels[i] = font.render(record, True, (0, 0, 0), (255, 255, 255))
             t_rect = self.rec_labels[i].get_rect()
-            # t_rect.centerx = (self.screen_width - self.width) / 2
             t_rect.y = 35 + i * 15
             t_rect.x = 10
             t_rect.width = self.screen_width - self.width
@@ -293,18 +578,17 @@ class PlayWithHuman:
             i += 1
 
     def draw_label(self, screen, widget_background, text, y, font_size, x=None):
-        font_file = self.config.resource.font_path
-        font = pygame.font.Font(font_file, font_size)
+        font = self.load_font_with_fallback(font_size, prefer_chinese=True)
         label = font.render(text, True, (0, 0, 0), (255, 255, 255))
         t_rect = label.get_rect()
         t_rect.y = y
-        if x != None:
+        if x is not None:
             t_rect.x = x
         else:
             t_rect.centerx = (self.screen_width - self.width) / 2
         widget_background.blit(label, t_rect)
         screen.blit(widget_background, (self.width, 0))
-        
+
 
 class Chessman_Sprite(pygame.sprite.Sprite):
     is_selected = False
@@ -319,15 +603,12 @@ class Chessman_Sprite(pygame.sprite.Sprite):
         self.rect = Rect(chessman.col_num * w, (9 - chessman.row_num) * h, w, h)
 
     def move(self, col_num, row_num, w=80, h=80):
-        # print self.chessman.name, col_num, row_num
         old_col_num = self.chessman.col_num
         old_row_num = self.chessman.row_num
         is_correct_position = self.chessman.move(col_num, row_num)
         if is_correct_position:
             self.rect = Rect(old_col_num * w, (9 - old_row_num) * h, w, h)
-            self.rect.move_ip((col_num - old_col_num)
-                              * w, (old_row_num - row_num) * h)
-            # self.rect = self.rect.clamp(SCREENRECT)
+            self.rect.move_ip((col_num - old_col_num) * w, (old_row_num - row_num) * h)
             self.chessman.chessboard.clear_chessmans_moving_list()
             self.chessman.chessboard.calc_chessmans_moving_list()
             return True
@@ -341,17 +622,16 @@ class Chessman_Sprite(pygame.sprite.Sprite):
 
 
 def load_image(file, sub_dir=None):
-    '''loads an image, prepares it for play'''
     if sub_dir:
-        file = os.path.join(main_dir, 'images', sub_dir, file)
+        file = IMAGES_DIR / sub_dir / file
     else:
-        file = os.path.join(main_dir, 'images', file)
+        file = IMAGES_DIR / file
     try:
-        surface = pygame.image.load(file)
+        surface = pygame.image.load(str(file))
     except pygame.error:
-        raise SystemExit('Could not load image "%s" %s' %
-                         (file, pygame.get_error()))
+        raise SystemExit('Could not load image "%s" %s' % (file, pygame.get_error()))
     return surface.convert()
+
 
 def load_images(*files):
     global PIECE_STYLE
@@ -359,6 +639,7 @@ def load_images(*files):
     for file in files:
         imgs.append(load_image(file, PIECE_STYLE))
     return imgs
+
 
 def creat_sprite_group(sprite_group, chessmans_hash, w, h):
     for chess in chessmans_hash.values():
@@ -395,12 +676,15 @@ def creat_sprite_group(sprite_group, chessmans_hash, w, h):
         chessman_sprite = Chessman_Sprite(images, chess, w, h)
         sprite_group.add(chessman_sprite)
 
+
 def select_sprite_from_group(sprite_group, col_num, row_num):
     for sprite in sprite_group:
         if sprite.chessman.col_num == col_num and sprite.chessman.row_num == row_num:
             return sprite
     return None
 
-def translate_hit_area(screen_x, screen_y, w=80, h = 80):
-    return screen_x // w, 9 - screen_y // h
 
+def translate_hit_area(screen_x, screen_y, w=80, h=80):
+    col_num = round((screen_x - w / 2) / w)
+    row_num = round(9 - ((screen_y - h / 2) / h))
+    return col_num, row_num

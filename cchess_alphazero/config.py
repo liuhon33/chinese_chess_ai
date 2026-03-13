@@ -127,6 +127,8 @@ class Options:
     gpu_num = 1
     evaluate = False
     has_history = False
+    debug_gui = False
+    analysis_only = False
 
 
 class ClusterConfig:

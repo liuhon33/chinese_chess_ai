@@ -26,6 +26,7 @@ python ./cchess_alphazero/run.py self \
   --auto-reload-best \
   --reload-best-interval 300 \
   --safe-write-play-data
+
   
 
 
