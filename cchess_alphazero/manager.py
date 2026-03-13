@@ -52,6 +52,8 @@ def create_parser():
     parser.add_argument("--debug-gui", help="emit GUI click mapping logs in play mode", action="store_true")
     parser.add_argument("--analysis-only", help="let human play both sides while AI only analyzes", action="store_true")
     parser.add_argument("--invert", help="flip the GUI board display by 180 degrees", action="store_true")
+    parser.add_argument("--window-width", help="initial play GUI window width in pixels", type=int)
+    parser.add_argument("--window-height", help="initial play GUI window height in pixels", type=int)
     return parser
 
 
@@ -82,6 +84,8 @@ def setup(config: Config, args):
     config.opts.debug_gui = args.debug_gui
     config.opts.analysis_only = args.analysis_only
     config.opts.invert = args.invert
+    config.opts.window_width = args.window_width
+    config.opts.window_height = args.window_height
     config.resource.create_directories()
     if args.cmd == 'self':
         setup_logger(config.resource.main_log_path)

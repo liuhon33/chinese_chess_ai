@@ -130,6 +130,8 @@ class Options:
     debug_gui = False
     analysis_only = False
     invert = False
+    window_width = None
+    window_height = None
 
 
 class ClusterConfig:
