@@ -16,6 +16,10 @@ from cchess_alphazero.lib.web_helper import download_file, http_request
 logger = getLogger(__name__)
 
 
+def _prediction_value_to_float(value):
+    return float(np.asarray(value, dtype=np.float32).reshape(-1)[0])
+
+
 class CChessModelAPI:
     def __init__(self, config: Config, agent_model):
         self.agent_model = agent_model
@@ -70,7 +74,7 @@ class CChessModelAPI:
             buf = []
             k, i = 0, 0
             for p, v in zip(policy_ary, value_ary):
-                buf.append((p, float(v)))
+                buf.append((p, _prediction_value_to_float(v)))
                 k += 1
                 if k >= data_len[i]:
                     result_pipes[i].send(buf)

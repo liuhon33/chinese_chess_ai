@@ -3,6 +3,7 @@ import unittest
 
 import numpy as np
 
+from cchess_alphazero.agent.api import _prediction_value_to_float
 from cchess_alphazero.agent.backends.torch_backend import TorchModelBackend
 from cchess_alphazero.config import Config
 from cchess_alphazero.environment.lookup_tables import ActionLabelsRed
@@ -17,6 +18,12 @@ def _torch_available() -> bool:
 
 
 TORCH_AVAILABLE = _torch_available()
+
+
+class PredictionValueConversionTest(unittest.TestCase):
+    def test_prediction_value_to_float_accepts_batch_column_output(self):
+        self.assertEqual(_prediction_value_to_float(np.asarray([0.25], dtype=np.float32)), 0.25)
+        self.assertEqual(_prediction_value_to_float(np.asarray([[0.5]], dtype=np.float32)), 0.5)
 
 
 @unittest.skipUnless(TORCH_AVAILABLE, "torch is not installed or importable")
