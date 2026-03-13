@@ -129,6 +129,7 @@ class Options:
     has_history = False
     debug_gui = False
     analysis_only = False
+    invert = False
 
 
 class ClusterConfig:

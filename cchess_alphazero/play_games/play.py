@@ -48,6 +48,17 @@ CHINESE_FONT_FALLBACKS = [
 PIECE_STYLE = 'WOOD'
 
 
+def orient_board_coordinate(col_num, row_num, invert=False):
+    if invert:
+        return 8 - col_num, 9 - row_num
+    return col_num, row_num
+
+
+def board_to_sprite_rect(col_num, row_num, w, h, invert=False):
+    display_col_num, display_row_num = orient_board_coordinate(col_num, row_num, invert=invert)
+    return Rect(display_col_num * w, (9 - display_row_num) * h, w, h)
+
+
 def start(config: Config, human_move_first=True):
     global PIECE_STYLE
     PIECE_STYLE = config.opts.piece_style
@@ -84,6 +95,7 @@ class PlayWithHuman:
         self.piece_click_tolerance = int(round(min(self.chessman_w, self.chessman_h) * 0.60))
         self.gui_debug = bool(getattr(self.config.opts, "debug_gui", False))
         self.analysis_only = bool(getattr(self.config.opts, "analysis_only", False))
+        self.invert_board = bool(getattr(self.config.opts, "invert", False))
         self.preferred_font_path = self.resolve_font_path()
         self.font_cache = {}
         self.font_warning_cache = set()
@@ -184,9 +196,14 @@ class PlayWithHuman:
         return font
 
     def board_to_screen(self, col_num, row_num):
+        display_col_num, display_row_num = orient_board_coordinate(
+            col_num,
+            row_num,
+            invert=self.invert_board,
+        )
         return (
-            col_num * self.chessman_w + self.chessman_w / 2,
-            (9 - row_num) * self.chessman_h + self.chessman_h / 2,
+            display_col_num * self.chessman_w + self.chessman_w / 2,
+            (9 - display_row_num) * self.chessman_h + self.chessman_h / 2,
         )
 
     def move_to_board_points(self, move, red_to_move):
@@ -225,8 +242,13 @@ class PlayWithHuman:
             )
             return None
 
-        col_num = round((screen_x - self.chessman_w / 2) / self.chessman_w)
-        row_num = round(9 - ((screen_y - self.chessman_h / 2) / self.chessman_h))
+        display_col_num = round((screen_x - self.chessman_w / 2) / self.chessman_w)
+        display_row_num = round(9 - ((screen_y - self.chessman_h / 2) / self.chessman_h))
+        col_num, row_num = orient_board_coordinate(
+            display_col_num,
+            display_row_num,
+            invert=self.invert_board,
+        )
         if not (0 <= col_num <= 8 and 0 <= row_num <= 9):
             self.log_gui_event(
                 "Click (%s, %s) rejected: mapped to invalid board coordinate (%s, %s).",
@@ -461,7 +483,13 @@ class PlayWithHuman:
         screen.blit(widget_background, (self.width, 0))
         pygame.display.flip()
         self.chessmans = pygame.sprite.Group()
-        creat_sprite_group(self.chessmans, self.env.board.chessmans_hash, self.chessman_w, self.chessman_h)
+        creat_sprite_group(
+            self.chessmans,
+            self.env.board.chessmans_hash,
+            self.chessman_w,
+            self.chessman_h,
+            invert=self.invert_board,
+        )
         return screen, board_background, widget_background
 
     def start(self, human_first=True):
@@ -681,20 +709,18 @@ class Chessman_Sprite(pygame.sprite.Sprite):
     images = []
     is_transparent = False
 
-    def __init__(self, images, chessman, w=80, h=80):
+    def __init__(self, images, chessman, w=80, h=80, invert=False):
         pygame.sprite.Sprite.__init__(self)
         self.chessman = chessman
         self.images = [pygame.transform.scale(image, (w, h)) for image in images]
         self.image = self.images[0]
-        self.rect = Rect(chessman.col_num * w, (9 - chessman.row_num) * h, w, h)
+        self.invert = invert
+        self.rect = board_to_sprite_rect(chessman.col_num, chessman.row_num, w, h, invert=self.invert)
 
     def move(self, col_num, row_num, w=80, h=80):
-        old_col_num = self.chessman.col_num
-        old_row_num = self.chessman.row_num
         is_correct_position = self.chessman.move(col_num, row_num)
         if is_correct_position:
-            self.rect = Rect(old_col_num * w, (9 - old_row_num) * h, w, h)
-            self.rect.move_ip((col_num - old_col_num) * w, (old_row_num - row_num) * h)
+            self.rect = board_to_sprite_rect(self.chessman.col_num, self.chessman.row_num, w, h, invert=self.invert)
             self.chessman.chessboard.clear_chessmans_moving_list()
             self.chessman.chessboard.calc_chessmans_moving_list()
             return True
@@ -727,7 +753,7 @@ def load_images(*files):
     return imgs
 
 
-def creat_sprite_group(sprite_group, chessmans_hash, w, h):
+def creat_sprite_group(sprite_group, chessmans_hash, w, h, invert=False):
     for chess in chessmans_hash.values():
         if chess.is_red:
             if isinstance(chess, Rook):
@@ -759,7 +785,7 @@ def creat_sprite_group(sprite_group, chessmans_hash, w, h):
                 images = load_images("BA.GIF", "BAS.GIF")
             else:
                 images = load_images("BP.GIF", "BPS.GIF")
-        chessman_sprite = Chessman_Sprite(images, chess, w, h)
+        chessman_sprite = Chessman_Sprite(images, chess, w, h, invert=invert)
         sprite_group.add(chessman_sprite)
 
 
