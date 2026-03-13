@@ -36,6 +36,12 @@ from cchess_alphazero.lib.web_helper import upload_file
 logger = getLogger(__name__)
 
 
+def _model_uses_history(model: CChessModel) -> bool:
+    spec = getattr(model.backend, "_spec", None)
+    input_depth = getattr(spec, "input_depth", model.config.model.input_depth)
+    return int(input_depth) > 14
+
+
 def load_model(config, config_file=None):
     use_history = False
     model = CChessModel(config)
@@ -48,11 +54,11 @@ def load_model(config, config_file=None):
     try:
         if config.opts.new or not load_model_weight(model, config_path, weight_path):
             build_fresh_best_model(model)
-            use_history = True
+        use_history = _model_uses_history(model)
     except Exception as e:
         logger.info(f"Exception {e}, building a fresh BestModel instead")
         build_fresh_best_model(model)
-        use_history = True
+        use_history = _model_uses_history(model)
     return model, use_history
 
 
