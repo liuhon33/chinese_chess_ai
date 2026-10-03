@@ -14,7 +14,7 @@ module load python/3.12
 cd /scratch/liuhon33/chinese_chess/chinese_chess_ai
 source /scratch/liuhon33/chinese_chess/venvs/torch210_cu128/bin/activate
 
-DATA_DIR=${DATA_DIR:-/scratch/liuhon33/chinese_chess/chinese_chess_ai/mydata}
+DATA_DIR=${DATA_DIR:-/scratch/liuhon33/chinese_chess/chinese_chess_ai/testdata}
 GPU_ID=${GPU_ID:-0}
 
 python ./cchess_alphazero/run.py self \
@@ -25,9 +25,14 @@ python ./cchess_alphazero/run.py self \
   --worker-id "${SLURM_ARRAY_TASK_ID}" \
   --auto-reload-best \
   --reload-best-interval 300 \
-  --safe-write-play-data
-
-  
-
+  --safe-write-play-data \
+  --terminal-log-style linux \
+  --log-moves \
+  --log-game-summary \
+  --log-buffer-flush \
+  --log-model-reload \
+  --log-worker-prefix \
+  --log-pid \
+  --log-node-info
 
 

@@ -14,7 +14,7 @@ module load python/3.12
 cd /scratch/liuhon33/chinese_chess/chinese_chess_ai
 source /scratch/liuhon33/chinese_chess/venvs/torch210_cu128/bin/activate
 
-DATA_DIR=${DATA_DIR:-/scratch/liuhon33/chinese_chess/chinese_chess_ai/mydata}
+DATA_DIR=${DATA_DIR:-/scratch/liuhon33/chinese_chess/chinese_chess_ai/testdata}
 GPU_ID=${GPU_ID:-0}
 
 python ./cchess_alphazero/run.py eval \
@@ -22,4 +22,12 @@ python ./cchess_alphazero/run.py eval \
   --type local_torch \
   --gpu "${GPU_ID}" \
   --cluster-mode \
-  --evaluator-poll-interval 120
+  --evaluator-poll-interval 120 \
+  --terminal-log-style linux \
+  --log-moves \
+  --log-game-summary \
+  --log-buffer-flush \
+  --log-model-reload \
+  --log-worker-prefix \
+  --log-pid \
+  --log-node-info
