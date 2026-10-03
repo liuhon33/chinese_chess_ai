@@ -10,7 +10,7 @@ from logging import getLogger
 
 from cchess_alphazero.config import Config
 from cchess_alphazero.lib.cluster_helper import auto_reload_best_enabled, best_model_reload_interval
-from cchess_alphazero.lib.model_helper import load_best_model_weight, need_to_reload_best_model_weight
+from cchess_alphazero.lib.model_helper import fresh_start_pending, load_best_model_weight, need_to_reload_best_model_weight
 from cchess_alphazero.lib.terminal_logger import emit_terminal_log, should_log_model_reload
 from cchess_alphazero.lib.web_helper import download_file, http_request
 
@@ -45,12 +45,12 @@ class CChessModelAPI:
         reload_enabled = self.need_reload and auto_reload_best_enabled(self.config)
         reload_interval = best_model_reload_interval(self.config)
         if self.config.opts.new:
-            logger.info("Fresh-start mode active; skip background model reloads.")
+            logger.info("Fresh-start mode active; skip remote checkpoints, allow subsequent local promotions.")
         elif self.config.internet.distributed and reload_enabled:
             self.try_reload_model_from_internet()
         last_model_check_time = time()
         while not self.done:
-            if not self.config.opts.new and reload_enabled and last_model_check_time + reload_interval < time():
+            if not fresh_start_pending(self.config) and reload_enabled and last_model_check_time + reload_interval < time():
                 self.try_reload_model()
                 last_model_check_time = time()
             ready = connection.wait(self.pipes, timeout=0.001)
@@ -84,13 +84,13 @@ class CChessModelAPI:
                     i += 1
 
     def try_reload_model(self, config_file=None):
-        if self.config.opts.new:
+        if fresh_start_pending(self.config):
             return
         if config_file:
             config_path = os.path.join(self.config.resource.model_dir, config_file)
             shutil.copy(config_path, self.config.resource.model_best_config_path)
         try:
-            if self.config.internet.distributed and not config_file:
+            if self.config.internet.distributed and not self.config.opts.new and not config_file:
                 self.try_reload_model_from_internet()
             else:
                 if self.need_reload and auto_reload_best_enabled(self.config) and need_to_reload_best_model_weight(self.agent_model):

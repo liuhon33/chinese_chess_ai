@@ -61,14 +61,54 @@ class NetworkSpec:
 
 
 if nn is not None:
+    class KerasBatchNorm2d(nn.BatchNorm2d):
+        """Keras 2.0.8 stores population variance, unlike Torch BatchNorm."""
+
+        def forward(self, x):
+            if not self.training:
+                return super().forward(x)
+            self._check_input_dim(x)
+            with torch.no_grad():
+                variance, mean = torch.var_mean(x, dim=(0, 2, 3), unbiased=False)
+                self.running_mean.lerp_(mean, self.momentum)
+                self.running_var.lerp_(variance, self.momentum)
+                self.num_batches_tracked.add_(1)
+            return F.batch_norm(x, None, None, self.weight, self.bias, True, 0.0, self.eps)
+
+
+    class KerasSGD(torch.optim.Optimizer):
+        """Keep momentum in parameter units, including across LR changes."""
+
+        def __init__(self, params, lr, momentum):
+            super().__init__(params, dict(lr=float(lr), momentum=float(momentum)))
+
+        @torch.no_grad()
+        def step(self, closure=None):
+            loss = None
+            if closure is not None:
+                with torch.enable_grad():
+                    loss = closure()
+            for group in self.param_groups:
+                for param in group["params"]:
+                    if param.grad is None:
+                        continue
+                    state = self.state[param]
+                    if "momentum_buffer" not in state:
+                        state["momentum_buffer"] = torch.zeros_like(param)
+                    velocity = state["momentum_buffer"]
+                    velocity.mul_(group["momentum"]).add_(param.grad, alpha=-group["lr"])
+                    param.add_(velocity)
+            return loss
+
+
     class ResidualBlock(nn.Module):
         def __init__(self, channels: int, kernel_size: int):
             super().__init__()
             padding = kernel_size // 2
             self.conv1 = nn.Conv2d(channels, channels, kernel_size, padding=padding, bias=False)
-            self.bn1 = nn.BatchNorm2d(channels, eps=BATCH_NORM_EPSILON, momentum=BATCH_NORM_MOMENTUM)
+            self.bn1 = KerasBatchNorm2d(channels, eps=BATCH_NORM_EPSILON, momentum=BATCH_NORM_MOMENTUM)
             self.conv2 = nn.Conv2d(channels, channels, kernel_size, padding=padding, bias=False)
-            self.bn2 = nn.BatchNorm2d(channels, eps=BATCH_NORM_EPSILON, momentum=BATCH_NORM_MOMENTUM)
+            self.bn2 = KerasBatchNorm2d(channels, eps=BATCH_NORM_EPSILON, momentum=BATCH_NORM_MOMENTUM)
 
         def forward(self, x):
             residual = x
@@ -88,7 +128,7 @@ if nn is not None:
                 padding=spec.first_filter_size // 2,
                 bias=False,
             )
-            self.input_bn = nn.BatchNorm2d(
+            self.input_bn = KerasBatchNorm2d(
                 spec.filter_num,
                 eps=BATCH_NORM_EPSILON,
                 momentum=BATCH_NORM_MOMENTUM,
@@ -97,20 +137,26 @@ if nn is not None:
                 [ResidualBlock(spec.filter_num, spec.filter_size) for _ in range(spec.res_layer_num)]
             )
             self.policy_conv = nn.Conv2d(spec.filter_num, spec.policy_channels, 1, bias=False)
-            self.policy_bn = nn.BatchNorm2d(
+            self.policy_bn = KerasBatchNorm2d(
                 spec.policy_channels,
                 eps=BATCH_NORM_EPSILON,
                 momentum=BATCH_NORM_MOMENTUM,
             )
             self.policy_fc = nn.Linear(spec.policy_channels * spec.board_height * spec.board_width, spec.n_labels)
             self.value_conv = nn.Conv2d(spec.filter_num, spec.value_channels, 1, bias=False)
-            self.value_bn = nn.BatchNorm2d(
+            self.value_bn = KerasBatchNorm2d(
                 spec.value_channels,
                 eps=BATCH_NORM_EPSILON,
                 momentum=BATCH_NORM_MOMENTUM,
             )
             self.value_fc1 = nn.Linear(spec.value_channels * spec.board_height * spec.board_width, spec.value_fc_size)
             self.value_fc2 = nn.Linear(spec.value_fc_size, 1)
+            # Conv2D/Dense defaults in the pinned legacy Keras version.
+            for module in self.modules():
+                if isinstance(module, (nn.Conv2d, nn.Linear)):
+                    nn.init.xavier_uniform_(module.weight)
+                    if module.bias is not None:
+                        nn.init.zeros_(module.bias)
 
         def forward(self, x):
             x = F.relu(self.input_bn(self.input_conv(x)))
@@ -240,7 +286,7 @@ class TorchModelBackend(ModelBackend):
             self._loss_weights = tuple(loss_weights)
             params = self._model.parameters()
             if self._optimizer_name == "sgd":
-                self._optimizer = torch.optim.SGD(params, lr=float(learning_rate), momentum=float(momentum))
+                self._optimizer = KerasSGD(params, lr=learning_rate, momentum=momentum)
             elif self._optimizer_name == "adam":
                 self._optimizer = torch.optim.Adam(params, lr=float(learning_rate))
             else:
@@ -332,6 +378,13 @@ class TorchModelBackend(ModelBackend):
             self._model.eval()
             self._assert_model_device()
 
+            logger.info(
+                "Torch model device=%s (%s), input_depth=%s, filters=%s, residual_blocks=%s, cpu_threads=%s",
+                self._device,
+                torch.cuda.get_device_name(self._device) if self._device.type == "cuda" else "CPU",
+                spec.input_depth, spec.filter_num, spec.res_layer_num, torch.get_num_threads(),
+            )
+
     def _load_torch_checkpoint(self, weight_path: str) -> None:
         with self._lock:
             self._ensure_model_built()
@@ -369,7 +422,7 @@ class TorchModelBackend(ModelBackend):
             res_layer_num=res_indices[-1] if res_indices else 0,
             value_fc_size=int(value_dense_bias.shape[0]),
             n_labels=int(policy_out_bias.shape[0]),
-            l2_reg=_extract_l2_from_config(config_data) or self.config.model.l2_reg,
+            l2_reg=_extract_l2_from_config(config_data),
             policy_channels=int(policy_kernel.shape[3]),
             value_channels=int(value_kernel.shape[3]),
         )
@@ -393,7 +446,7 @@ class TorchModelBackend(ModelBackend):
         training: bool,
     ) -> Dict[str, float]:
         if len(indices) == 0:
-            return {"loss": 0.0, "policy_loss": 0.0, "value_loss": 0.0}
+            return {"loss": 0.0, "policy_loss": 0.0, "value_loss": 0.0, "regularization_loss": 0.0}
 
         states = torch.from_numpy(state_ary[indices])
         policies = torch.from_numpy(policy_ary[indices])
@@ -409,6 +462,7 @@ class TorchModelBackend(ModelBackend):
         total_loss = 0.0
         total_policy_loss = 0.0
         total_value_loss = 0.0
+        total_regularization_loss = 0.0
         total_count = 0
 
         for batch_states, batch_policies, batch_values in loader:
@@ -422,9 +476,12 @@ class TorchModelBackend(ModelBackend):
 
             with torch.set_grad_enabled(training):
                 pred_policy, pred_value = model(batch_states)
-                policy_loss = -(batch_policies * torch.log(pred_policy.clamp_min(1e-8))).sum(dim=1).mean()
+                # Match Keras categorical_crossentropy's normalization and epsilon.
+                normalized_policy = pred_policy / pred_policy.sum(dim=1, keepdim=True)
+                policy_loss = -(batch_policies * torch.log(normalized_policy.clamp(1e-7, 1 - 1e-7))).sum(dim=1).mean()
                 value_loss = F.mse_loss(pred_value, batch_values)
-                loss = self._loss_weights[0] * policy_loss + self._loss_weights[1] * value_loss
+                regularization_loss = self._keras_regularization_loss()
+                loss = self._loss_weights[0] * policy_loss + self._loss_weights[1] * value_loss + regularization_loss
                 if training:
                     loss.backward()
                     self._optimizer.step()
@@ -433,22 +490,36 @@ class TorchModelBackend(ModelBackend):
             total_loss += float(loss.detach().cpu()) * batch_count
             total_policy_loss += float(policy_loss.detach().cpu()) * batch_count
             total_value_loss += float(value_loss.detach().cpu()) * batch_count
+            total_regularization_loss += float(regularization_loss.detach().cpu()) * batch_count
 
         return {
             "loss": total_loss / total_count,
             "policy_loss": total_policy_loss / total_count,
             "value_loss": total_value_loss / total_count,
+            "regularization_loss": total_regularization_loss / total_count,
         }
+
+    def _keras_regularization_loss(self):
+        if not self._spec or not self._spec.l2_reg:
+            return torch.zeros((), device=self._device)
+
+        regularization_loss = torch.zeros((), device=self._device)
+        for module in self._model.modules():
+            if isinstance(module, (nn.Conv2d, nn.Linear)):
+                regularization_loss = regularization_loss + float(self._spec.l2_reg) * module.weight.pow(2).sum()
+        return regularization_loss
 
     def _split_indices(self, sample_count: int, validation_split: float, shuffle: bool) -> Tuple[np.ndarray, np.ndarray]:
         indices = np.arange(sample_count)
-        if shuffle:
-            np.random.shuffle(indices)
-        if validation_split <= 0 or sample_count < 2:
+        if not 0 <= validation_split < 1:
+            raise ValueError("validation_split must be in [0, 1)")
+        if validation_split == 0:
             return indices, np.asarray([], dtype=np.int64)
-        val_size = int(round(sample_count * validation_split))
-        val_size = min(max(val_size, 1), sample_count - 1)
-        return indices[val_size:], indices[:val_size]
+        # Keras holds out the tail before the epoch's training shuffle.
+        split_at = int(sample_count * (1 - validation_split))
+        if split_at == 0:
+            raise ValueError("validation_split leaves no training samples")
+        return indices[:split_at], indices[split_at:]
 
     def _save_keras_weights(self, weight_path: str) -> None:
         layer_names = [layer["config"]["name"] for layer in self._build_keras_config(self._spec)["layers"]]
@@ -670,6 +741,7 @@ class TorchModelBackend(ModelBackend):
             return torch.device("cpu")
         if torch.cuda.is_available():
             return torch.device("cuda:0")
+        logger.warning("GPU requested (%s), but CUDA is unavailable; Torch is falling back to CPU.", normalized)
         return torch.device("cpu")
 
     def _assert_model_device(self) -> None:
@@ -856,7 +928,6 @@ def _make_flatten_layer(name: str, inbound: str) -> Dict[str, object]:
         "config": {
             "name": name,
             "trainable": True,
-            "data_format": "channels_first",
         },
         "inbound_nodes": _single_inbound(inbound),
         "name": name,

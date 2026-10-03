@@ -28,6 +28,8 @@ class PlayDataConfig:
     def __init__(self):
         self.sl_nb_game_in_file = 250
         self.nb_game_in_file = 5
+        # Checked at game boundaries; slow workers publish completed games sooner.
+        self.max_buffer_seconds = 300
         self.max_file_num = 200
         self.nb_game_save_record = 1
 

@@ -65,6 +65,10 @@ def setup(config: Config, args):
     config.opts.device_list = args.gpu
     if args.data_dir:
         config.resource.update_paths(data_dir=os.path.abspath(args.data_dir))
+    if args.cmd == "opt" and args.total_step is None and not args.new:
+        from cchess_alphazero.lib.training_monitor import load_training_state
+        state = load_training_state(config)
+        config.trainer.start_total_steps = int(state.get("total_steps", config.trainer.start_total_steps))
     config.cluster.enabled = args.cluster_mode
     config.cluster.worker_id = args.worker_id
     config.cluster.auto_reload_best = args.auto_reload_best

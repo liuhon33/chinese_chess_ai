@@ -22,8 +22,8 @@ from cchess_alphazero.lib.cluster_helper import (
     safe_write_play_data_enabled,
     write_json_atomic,
 )
-from cchess_alphazero.lib.data_helper import get_game_data_filenames, write_game_data_to_file
-from cchess_alphazero.lib.model_helper import build_fresh_best_model, load_model_weight
+from cchess_alphazero.lib.data_helper import get_game_data_filenames, should_flush_play_data, write_game_data_to_file
+from cchess_alphazero.lib.model_helper import build_fresh_best_model, fresh_start_pending, load_model_weight
 from cchess_alphazero.lib.terminal_logger import (
     emit_terminal_log,
     should_log_buffer_flush,
@@ -59,6 +59,7 @@ class SelfPlayWorker:
         global job_done, thr_free, rst, data, futures
 
         self.buffer = []
+        self.last_flush_time = time()
         job_done.acquire(True)
         logger.info("自我博弈开始，请耐心等待....")
         emit_terminal_log(self.config, "self", "worker started", worker_id=self.worker_label)
@@ -93,7 +94,7 @@ class SelfPlayWorker:
                     )
                 self.buffer += data
 
-                if (game_idx % self.config.play_data.nb_game_in_file) == 0:
+                if should_flush_play_data(self.config, game_idx, time() - self.last_flush_time):
                     self.flush_buffer()
                     self.remove_play_data(all=False)
                 future = executor.submit(self_play_buffer, self.config, self.cur_pipes, self.use_history)
@@ -114,7 +115,7 @@ class SelfPlayWorker:
         else:
             config_path = os.path.join(self.config.resource.model_dir, config_file)
         try:
-            if self.config.opts.new or not load_model_weight(model, config_path, weight_path):
+            if fresh_start_pending(self.config) or not load_model_weight(model, config_path, weight_path):
                 build_fresh_best_model(model)
                 use_history = False
         except Exception as e:
@@ -143,6 +144,7 @@ class SelfPlayWorker:
             upload_worker = Thread(target=self.upload_play_data, args=(path, filename))
             upload_worker.start()
         self.buffer = []
+        self.last_flush_time = time()
 
     def remove_play_data(self, all=False):
         if cluster_enabled(self.config):

@@ -1,4 +1,5 @@
 import gc
+import math
 import os
 import shutil
 from collections import deque
@@ -247,7 +248,8 @@ class OptimizeWorker:
         )
         if metrics:
             logger.info(f"Training metrics: {metrics}")
-        return (state_ary.shape[0] // tc.batch_size) * epochs
+        train_samples = int(state_ary.shape[0] * (1 - 0.02))
+        return math.ceil(train_samples / tc.batch_size) * epochs
 
     def compile_model(self):
         self.model.configure_training(
@@ -294,13 +296,19 @@ class OptimizeWorker:
 
     def load_model(self):
         model = CChessModel(self.config)
-        if self.config.opts.new or not load_best_model_weight(model):
+        if not load_best_model_weight(model):
             build_fresh_best_model(model)
         return model
 
     def publish_candidate_model(self):
         logger.info("Publishing candidate model for evaluation.")
-        save_as_next_generation_model(self.model)
+        # CChessModel.save updates digest to the file it saved. Reload checks
+        # must continue tracking the BEST checkpoint, not our new candidate.
+        best_digest = self.model.digest
+        try:
+            save_as_next_generation_model(self.model)
+        finally:
+            self.model.digest = best_digest
         return self.config.resource.next_generation_weight_path
 
     def decide_learning_rate(self, total_steps):

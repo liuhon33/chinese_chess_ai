@@ -25,7 +25,7 @@ class LocalTorchConfigTest(unittest.TestCase):
         self.assertEqual(config.trainer.min_games_to_begin_learn, 8)
         self.assertEqual(config.trainer.batch_size, 256)
         self.assertEqual(config.trainer.load_step, 16)
-        self.assertEqual(config.trainer.polling_interval, 90)
+        self.assertEqual(config.trainer.polling_interval, 300)
         self.assertEqual(config.eval.polling_interval, 15)
         self.assertEqual(config.eval.next_generation_replace_rate, 0.55)
 

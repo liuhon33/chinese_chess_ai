@@ -3,7 +3,6 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, wait
 from logging import getLogger
 from multiprocessing import Manager
-from random import randint
 from time import sleep, time
 
 import cchess_alphazero.environment.static_env as senv
@@ -13,6 +12,7 @@ from cchess_alphazero.config import Config
 from cchess_alphazero.lib.cluster_helper import evaluator_poll_interval, remove_file_if_exists
 from cchess_alphazero.lib.model_helper import (
     build_fresh_best_model,
+    fresh_start_pending,
     is_next_generation_model_fresh,
     load_model_weight,
     promote_next_generation_to_best,
@@ -254,8 +254,6 @@ class EvaluateWorker:
         search_tree1 = defaultdict(VisitState)
         search_tree2 = defaultdict(VisitState)
 
-        playouts = randint(8, 12) * 100
-        self.config.play.simulation_num_per_move = playouts
         logger.info(f"Set playouts = {self.config.play.simulation_num_per_move}")
 
         self.player1 = CChessPlayer(
@@ -377,7 +375,7 @@ def remove_ng_model(config):
 
 def load_best_model(config):
     model = CChessModel(config)
-    if config.opts.new or not load_model_weight(
+    if fresh_start_pending(config) or not load_model_weight(
         model,
         config.resource.model_best_config_path,
         config.resource.model_best_weight_path,

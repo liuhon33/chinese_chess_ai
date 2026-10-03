@@ -14,7 +14,12 @@ logger = getLogger(__name__)
 
 
 def _fresh_start_enabled(model):
-    return bool(getattr(model.config.opts, "new", False))
+    return fresh_start_pending(model.config)
+
+
+def fresh_start_pending(config):
+    """--new skips old checkpoints only until this process creates its best."""
+    return bool(config.opts.new and not getattr(config.opts, "fresh_start_initialized", False))
 
 
 def _best_model_paths(model):
@@ -44,7 +49,7 @@ def load_best_model_weight_from_internet(model):
     :param cchess_alphazero.agent.model.CChessModel model:
     :return:
     """
-    if _fresh_start_enabled(model):
+    if model.config.opts.new:
         logger.info("Fresh-start mode active; skip downloading BestModel checkpoint.")
         return False
     from cchess_alphazero.lib.web_helper import download_file
@@ -66,6 +71,7 @@ def build_fresh_best_model(model):
     logger.info("Initialize a fresh random BestModel.")
     model.build()
     save_as_best_model(model)
+    model.config.opts.fresh_start_initialized = True
     return model
 
 

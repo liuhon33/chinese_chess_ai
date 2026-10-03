@@ -22,8 +22,8 @@ from cchess_alphazero.lib.cluster_helper import (
     safe_write_play_data_enabled,
     write_json_atomic,
 )
-from cchess_alphazero.lib.data_helper import get_game_data_filenames, write_game_data_to_file
-from cchess_alphazero.lib.model_helper import build_fresh_best_model, load_model_weight
+from cchess_alphazero.lib.data_helper import get_game_data_filenames, should_flush_play_data, write_game_data_to_file
+from cchess_alphazero.lib.model_helper import build_fresh_best_model, fresh_start_pending, load_model_weight
 from cchess_alphazero.lib.terminal_logger import (
     emit_terminal_log,
     should_log_buffer_flush,
@@ -52,7 +52,7 @@ def load_model(config, config_file=None):
     else:
         config_path = os.path.join(config.resource.model_dir, config_file)
     try:
-        if config.opts.new or not load_model_weight(model, config_path, weight_path):
+        if fresh_start_pending(config) or not load_model_weight(model, config_path, weight_path):
             build_fresh_best_model(model)
         use_history = _model_uses_history(model)
     except Exception as e:
@@ -82,6 +82,7 @@ class SelfPlayWorker:
         self.cur_pipes = pipes
         self.id = pid
         self.buffer = []
+        self.last_flush_time = time()
         self.pid = os.getpid()
         self.use_history = use_history
         self.worker_label = self.config.cluster.worker_id or self.id
@@ -245,7 +246,7 @@ class SelfPlayWorker:
 
     def save_play_data(self, idx, data):
         self.buffer += data
-        if not idx % self.config.play_data.nb_game_in_file == 0:
+        if not should_flush_play_data(self.config, idx, time() - self.last_flush_time):
             return
 
         rc = self.config.resource
@@ -276,6 +277,7 @@ class SelfPlayWorker:
             upload_worker.daemon = True
             upload_worker.start()
         self.buffer = []
+        self.last_flush_time = time()
 
     def upload_play_data(self, path, filename):
         digest = CChessModel.fetch_digest(self.config.resource.model_best_weight_path)
