@@ -34,6 +34,7 @@ from cchess_alphazero.lib.model_helper import (
 from cchess_alphazero.lib.terminal_logger import emit_terminal_log, should_log_game_summary, should_log_model_reload
 from cchess_alphazero.lib.tf_util import set_session_config
 from cchess_alphazero.lib.training_monitor import save_training_state
+from cchess_alphazero.lib.logger import log_model_event
 
 logger = getLogger(__name__)
 
@@ -75,9 +76,12 @@ class OptimizeWorker:
             if self.has_pending_candidate():
                 if not waiting_for_candidate:
                     logger.info(
-                        "Candidate model is awaiting evaluation; optimizer will poll again in %.1f seconds.",
+                        "Candidate model is awaiting evaluation; training is paused, not reloading old weights. Polling again in %.1f seconds.",
                         self.polling_interval,
                     )
+                    log_model_event(self.config, "OPTIMIZER_WAITING_FOR_EVALUATION",
+                                    current_best=self.model.digest,
+                                    candidate_path=self.config.resource.next_generation_weight_path)
                     waiting_for_candidate = True
                 sleep(self.polling_interval)
                 continue
@@ -307,8 +311,10 @@ class OptimizeWorker:
         best_digest = self.model.digest
         try:
             save_as_next_generation_model(self.model)
+            candidate_digest = self.model.digest
         finally:
             self.model.digest = best_digest
+        log_model_event(self.config, "CANDIDATE_PUBLISHED", base_best=best_digest, candidate=candidate_digest)
         return self.config.resource.next_generation_weight_path
 
     def decide_learning_rate(self, total_steps):
@@ -321,7 +327,10 @@ class OptimizeWorker:
     def try_reload_model(self):
         logger.debug("check model")
         if need_to_reload_best_model_weight(self.model):
+            previous_digest = self.model.digest
             load_best_model_weight(self.model)
+            log_model_event(self.config, "OPTIMIZER_MODEL_RELOADED", previous_best=previous_digest,
+                            current_best=self.model.digest)
             if should_log_model_reload(self.config):
                 emit_terminal_log(self.config, "opt", "reloaded best model", worker_id=self.config.cluster.worker_id)
             return True

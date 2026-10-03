@@ -92,13 +92,13 @@ def setup(config: Config, args):
     config.opts.window_height = args.window_height
     config.resource.create_directories()
     if args.cmd == 'self':
-        setup_logger(config.resource.main_log_path)
+        setup_logger(config.resource.main_log_path, cluster=config.cluster.enabled)
     elif args.cmd == 'opt':
-        setup_logger(config.resource.opt_log_path)
+        setup_logger(config.resource.opt_log_path, cluster=config.cluster.enabled)
     elif args.cmd == 'play' or args.cmd == 'ob':
         setup_logger(config.resource.play_log_path)
     elif args.cmd == 'eval':
-        setup_logger(config.resource.eval_log_path)
+        setup_logger(config.resource.eval_log_path, cluster=config.cluster.enabled)
     elif args.cmd == 'sl':
         setup_logger(config.resource.sl_log_path)
 

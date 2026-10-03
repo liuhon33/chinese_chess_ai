@@ -92,6 +92,52 @@ python ./cchess_alphazero/run.py eval \
 
 ## Operational notes
 
+### Following model progress
+
+`logs/main.log` includes `MODEL_EVENT` entries from self-play, optimization,
+and evaluation. Filter that timeline with:
+
+```bash
+grep -n 'MODEL_EVENT' logs/main.log
+```
+
+- `CANDIDATE_PUBLISHED`: the optimizer saved trained weights for evaluation.
+- `OPTIMIZER_WAITING_FOR_EVALUATION`: training pauses until the evaluator accepts
+  or rejects the candidate; this does not reload the old weights.
+- `EVALUATION_STARTED`: identifies the candidate and current best, along with
+  the number of evaluation games and simulations per move.
+- `BEST_MODEL_PROMOTED`: `previous_best` and `current_best` identify the actual
+  change in best weights. Includes the match score and promotion threshold.
+- `CANDIDATE_REJECTED`: the current best stays the same; the optimizer can continue.
+- `SELFPLAY_MODEL_RELOADED` / `OPTIMIZER_MODEL_RELOADED`: a process has loaded
+  the promoted weights. Self-play polls at `--reload-best-interval`.
+
+Model identifiers are checkpoint SHA-256 digests, not filenames (the filenames
+stay the same when weights change). `BestModel unchanged (digest check only,
+no reload)` means exactly that: a check, not a model copy or a training reset.
+
+On POSIX systems, cluster file handlers lock each append and reopen inherited
+descriptors after fork so multiple processes and NFS clients cannot overwrite
+each other's log records. All writers must run the updated code. Host and PID
+fields identify the process that wrote each record. Existing damaged log lines
+cannot be repaired by updating the code.
+
+### Deploying source updates
+
+Push source commits from the development checkout, then use `git pull --ff-only`
+on the cluster. Generated Slurm logs and diagnostic directories are ignored.
+If the cluster has its own commits, inspect and preserve them before aligning
+the branch; do not force-push over either history. Updating files does not update
+already-running Python workers: restart the affected jobs to load new code.
+
+The 2026-10-03 stalled candidate was published at 13:20 (98 optimizer steps).
+Evaluator job 1020849 had started before the sender-lock fix and still used the
+old code in memory. Its first comparison was still running hours later, so no
+promotion decision existed and the optimizer correctly waited. Git pull also
+failed because cluster commit `ab4e643` contained only generated logs while the
+actual sender fix was uncommitted. That history was preserved on
+`codex/cluster-before-sync-20261003` before synchronizing with GitHub.
+
 - Do not run multiple optimizer workers against the same `--data-dir` unless you accept duplicated training-control decisions. File claiming prevents duplicate file consumption, but the pipeline is still designed around one optimizer.
 - `--safe-write-play-data` is strongly recommended for cluster self-play.
 - The cluster scripts in `scripts/` are examples only. They are separate from the default local flow and pass all cluster flags explicitly.

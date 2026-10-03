@@ -20,6 +20,7 @@ from cchess_alphazero.lib.model_helper import (
 from cchess_alphazero.lib.terminal_logger import emit_terminal_log, should_log_game_summary
 from cchess_alphazero.lib.tf_util import set_session_config
 from cchess_alphazero.lib.training_monitor import estimate_match_elo, record_eval_metrics
+from cchess_alphazero.lib.logger import log_model_event
 
 logger = getLogger(__name__)
 
@@ -102,6 +103,15 @@ class ContinuousEvaluator:
                 replace_best_model(self.config)
             else:
                 remove_ng_model(self.config)
+            log_model_event(
+                self.config,
+                "BEST_MODEL_PROMOTED" if promotion_decision == "promote_candidate" else "CANDIDATE_REJECTED",
+                previous_best=result["best_digest"],
+                candidate=result["candidate_digest"],
+                current_best=result["candidate_digest"] if promotion_decision == "promote_candidate" else result["best_digest"],
+                score=f'{result["score_ratio"]:.3f}', threshold=f'{threshold:.3f}',
+                wins=result["wins"], losses=result["losses"], draws=result["draws"],
+            )
 
 
 def evaluate_next_generation_model(config: Config):
@@ -113,6 +123,9 @@ def evaluate_next_generation_model(config: Config):
         return None
 
     try:
+        log_model_event(config, "EVALUATION_STARTED", current_best=model_bt.digest, candidate=model_ng.digest,
+                        games=config.eval.game_num * config.play.max_processes,
+                        simulations=config.play.simulation_num_per_move)
         modelbt_pipes = manager.list([model_bt.get_pipes(need_reload=False) for _ in range(config.play.max_processes)])
         modelng_pipes = manager.list([model_ng.get_pipes(need_reload=False) for _ in range(config.play.max_processes)])
 
@@ -157,6 +170,8 @@ def evaluate_next_generation_model(config: Config):
         logger.info("新\t旧\t%s\t%s\t%s", red_new_win, red_new_draw, red_new_fail)
         logger.info("旧\t新\t%s\t%s\t%s", black_new_win, black_new_draw, black_new_fail)
         return {
+            "best_digest": model_bt.digest,
+            "candidate_digest": model_ng.digest,
             "total_score": total_score,
             "game_num": game_num,
             "score_ratio": total_score / game_num,

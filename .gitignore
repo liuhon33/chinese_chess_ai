@@ -12,3 +12,7 @@ validation_local_torch*
 
 testdata/
 remotelogs/
+scripts/logs/
+validation_perf_*/
+validation_sync_*/
+validation_*stack_*.txt

@@ -84,12 +84,12 @@ def need_to_reload_best_model_weight(model):
     if _fresh_start_enabled(model):
         logger.debug("Fresh-start mode active; skip BestModel reload checks.")
         return False
-    logger.debug("start reload the best model if changed")
     digest = model.fetch_digest(model.config.resource.model_best_weight_path)
     if digest != model.digest:
+        logger.info("BestModel changed: loaded=%s disk=%s", model.digest, digest)
         return True
 
-    logger.debug("the best model is not changed")
+    logger.debug("BestModel unchanged (digest check only, no reload): %s", digest)
     return False
 
 

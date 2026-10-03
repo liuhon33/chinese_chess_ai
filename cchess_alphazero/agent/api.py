@@ -12,6 +12,7 @@ from cchess_alphazero.config import Config
 from cchess_alphazero.lib.cluster_helper import auto_reload_best_enabled, best_model_reload_interval
 from cchess_alphazero.lib.model_helper import fresh_start_pending, load_best_model_weight, need_to_reload_best_model_weight
 from cchess_alphazero.lib.terminal_logger import emit_terminal_log, should_log_model_reload
+from cchess_alphazero.lib.logger import log_model_event
 from cchess_alphazero.lib.web_helper import download_file, http_request
 
 logger = getLogger(__name__)
@@ -94,7 +95,10 @@ class CChessModelAPI:
                 self.try_reload_model_from_internet()
             else:
                 if self.need_reload and auto_reload_best_enabled(self.config) and need_to_reload_best_model_weight(self.agent_model):
+                    previous_digest = self.agent_model.digest
                     load_best_model_weight(self.agent_model)
+                    log_model_event(self.config, "SELFPLAY_MODEL_RELOADED", worker=self.config.cluster.worker_id,
+                                    previous_best=previous_digest, current_best=self.agent_model.digest)
                     if should_log_model_reload(self.config):
                         emit_terminal_log(self.config, "model", "reloaded best model", worker_id=self.config.cluster.worker_id)
                 elif should_log_model_reload(self.config):

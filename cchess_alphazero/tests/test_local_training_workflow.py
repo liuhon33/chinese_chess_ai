@@ -84,6 +84,8 @@ class EvaluatorLoopTest(unittest.TestCase):
         config = Config("local_torch")
         service = evaluator.ContinuousEvaluator(config)
         result = {
+            "best_digest": "old-best",
+            "candidate_digest": "candidate",
             "score_ratio": 0.75,
             "win_rate": 75.0,
             "wins": 6,
