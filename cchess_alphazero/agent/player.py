@@ -118,9 +118,11 @@ class CChessPlayer:
                     t_data = self.buffer_planes[0:l]
                     # logger.debug(f"send queue size = {l}")
                     self.pipe.send(t_data)
-                else:
-                    self.run_lock.release()
-                    sleep(0.001)
+            if l == 0:
+                self.run_lock.release()
+                # Producers need q_lock to enqueue work. Sleeping with it held
+                # can starve every search thread on Linux for minutes.
+                sleep(0.001)
 
     def receiver(self):
         '''
