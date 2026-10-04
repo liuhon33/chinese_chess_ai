@@ -92,6 +92,26 @@ python ./cchess_alphazero/run.py eval \
 
 ## Operational notes
 
+### Plotting recorded evaluations
+
+Use the same Torch environment as the evaluator. The PNG writer requires Pillow;
+if it is missing from an existing environment, install it with
+`python -m pip install Pillow`. Then run from the repository root:
+
+```bash
+python tools/plot_elo_vs_games.py --data-dir testdata --type local_torch
+```
+
+This rebuilds `logs/elo_vs_games.png` from `logs/elo_history.csv`. The evaluator
+also updates both files after each completed candidate evaluation. These log paths
+are under the project log directory; `--data-dir` selects checkpoints and play data.
+With no completed evaluations, the plot says "No Elo history recorded yet".
+Self-play games and optimizer losses alone cannot supply Elo measurements.
+
+Each point is the candidate's match Elo relative to the best model it faced,
+computed from wins, losses, and draws. The reference changes after a promotion,
+so this is not an absolute or cumulative rating of model strength.
+
 ### Following model progress
 
 `logs/main.log` includes `MODEL_EVENT` entries from self-play, optimization,

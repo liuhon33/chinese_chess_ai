@@ -6,6 +6,7 @@ torch
 typing_extensions
 numpy
 pandas
+Pillow
 pygame
 requests
 tqdm
